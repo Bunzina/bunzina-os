@@ -1,5 +1,3 @@
--- service_id e auto_part_id referenciam o catálogo do serviço de Cadastros:
--- ficam como UUID solto, sem FK, pelo mesmo motivo do snapshot em 002.
 CREATE TABLE IF NOT EXISTS bunzina.service_order_service_items (
   id                UUID           PRIMARY KEY,
   service_order_id  UUID           NOT NULL REFERENCES bunzina.service_orders(id) ON DELETE CASCADE,

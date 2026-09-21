@@ -1,7 +1,3 @@
--- Cliente e veículo são snapshot desnormalizado, copiado na criação da ordem
--- (ADR 0012). Não há chave estrangeira: os dados são do banco do serviço de
--- Cadastros, e nenhum serviço acessa o banco de outro. As cópias valem para o
--- instante do evento e não devem ser sincronizadas.
 CREATE TABLE IF NOT EXISTS bunzina.service_orders (
   id                     UUID                         PRIMARY KEY,
 
