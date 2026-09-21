@@ -12,6 +12,7 @@ app-chart:
     service:
       type: ClusterIP
       port: 80
+    # Porta de entrada do fluxo: criação e entrega da ordem de serviço.
     ingress:
       enabled: true
       className: alb
