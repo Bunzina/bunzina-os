@@ -3,7 +3,7 @@ import { Price } from './price';
 
 describe('price', () => {
   test('should keep a non-negative value', () => {
-    expect(new Price(42).value).toBe(42);
+    expect(new Price(42)).toEqual({ value: 42 } as unknown as Price);
   });
 
   test('should reject negative values', () => {

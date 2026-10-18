@@ -27,11 +27,20 @@ describe('service order', () => {
       quote: new Quote({ servicesTotal: 100, autoPartsTotal: 100 }),
     });
 
-    expect(order.id).toBeDefined();
-    expect(order.status).toBe(ServiceOrderStatus.RECEIVED);
-    expect(order.serviceItems).toEqual([serviceItem]);
-    expect(order.autoPartItems).toEqual([autoPartItem]);
-    expect(order.createdAt).toBeInstanceOf(Date);
-    expect(order.updatedAt).toBeInstanceOf(Date);
+    expect(order).toEqual({
+      id: expect.any(String),
+      customerId: 'customer-id',
+      vehicleId: 'vehicle-id',
+      status: ServiceOrderStatus.RECEIVED,
+      serviceItems: [serviceItem],
+      autoPartItems: [autoPartItem],
+      quote: {
+        servicesTotal: 100,
+        autoPartsTotal: 100,
+        total: 200,
+      },
+      createdAt: expect.any(Date),
+      updatedAt: expect.any(Date),
+    } as unknown as ServiceOrder);
   });
 });

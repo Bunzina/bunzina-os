@@ -5,7 +5,11 @@ describe('quote', () => {
   test('should calculate the total', () => {
     const quote = new Quote({ servicesTotal: 120, autoPartsTotal: 80 });
 
-    expect(quote.total).toBe(200);
+    expect(quote).toEqual({
+      servicesTotal: 120,
+      autoPartsTotal: 80,
+      total: 200,
+    } as unknown as Quote);
   });
 
   test('should reject negative totals', () => {

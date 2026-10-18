@@ -10,7 +10,13 @@ describe('auto part item', () => {
       unitPrice: new Price(50),
     });
 
-    expect(item.totalPrice?.value).toBe(50);
+    expect(item).toEqual({
+      id: expect.any(String),
+      autoPartId: 'auto-part-id',
+      quantity: 1,
+      unitPrice: { value: 50 },
+      totalPrice: { value: 50 },
+    } as unknown as AutoPartItem);
   });
 
   test('should reject a non-positive quantity', () => {
