@@ -64,7 +64,10 @@ export class CreateServiceOrderUseCase {
     });
 
     const quote = new Quote({
-      servicesTotal: serviceItems.reduce((total, item) => total + item.price.value, 0),
+      servicesTotal: serviceItems.reduce(
+        (total, item) => total + item.price.value,
+        0,
+      ),
       autoPartsTotal: autoPartItems.reduce(
         (total, item) => total + (item.totalPrice?.value ?? 0),
         0,

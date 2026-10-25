@@ -66,4 +66,27 @@ describe('http catalog service', () => {
     });
     expect(receivedApiKeys).toEqual(['test-key']);
   });
+
+  test('should validate an auto part and normalize transport errors', async () => {
+    const catalog = new HttpCatalogService({
+      fetcher: async (input) => {
+        if (String(input).endsWith('/auto-parts/part-id')) {
+          return response({ id: 'part-id' });
+        }
+
+        throw new Error('connection refused');
+      },
+    });
+
+    await expect(
+      catalog.assertAutoPartExists('part-id'),
+    ).resolves.toBeUndefined();
+    await expect(
+      catalog.assertServiceExists('service-id'),
+    ).rejects.toMatchObject({
+      name: 'CatalogServiceError',
+      resource: 'services',
+      resourceId: 'service-id',
+    });
+  });
 });
