@@ -11,9 +11,12 @@ export interface ServiceOrderProps extends EntityProps {
   serviceItems: ServiceItem[];
   autoPartItems: AutoPartItem[];
   quote: Quote;
+  customerSnapshot?: CustomerSnapshot;
+  vehicleSnapshot?: VehicleSnapshot;
   createdAt?: Date;
   updatedAt?: Date;
   approvedAt?: Date;
+  paidAt?: Date;
   startedAt?: Date;
   completedAt?: Date;
   deliveredAt?: Date;
@@ -26,9 +29,12 @@ export class ServiceOrder extends Entity {
   serviceItems!: ServiceItem[];
   autoPartItems!: AutoPartItem[];
   quote!: Quote;
+  customerSnapshot?: CustomerSnapshot;
+  vehicleSnapshot?: VehicleSnapshot;
   createdAt!: Date;
   updatedAt!: Date;
   approvedAt?: Date;
+  paidAt?: Date;
   startedAt?: Date;
   completedAt?: Date;
   deliveredAt?: Date;
@@ -41,4 +47,17 @@ export class ServiceOrder extends Entity {
 
     Object.assign(this, input);
   }
+}
+
+export interface CustomerSnapshot {
+  id: string;
+  name: string;
+  document: string;
+  email?: string;
+}
+
+export interface VehicleSnapshot {
+  id: string;
+  plate: string;
+  model?: string;
 }

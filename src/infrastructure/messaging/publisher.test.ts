@@ -8,7 +8,14 @@ import { publish } from './publisher';
 propagation.setGlobalPropagator(new W3CTraceContextPropagator());
 
 const fakeChannel = () => {
-  const publishMock = mock(() => true);
+  const publishMock = mock(
+    (
+      _exchange: string,
+      _routingKey: string,
+      _body: Buffer,
+      _options: Record<string, unknown>,
+    ) => true,
+  );
   return {
     channel: { publish: publishMock } as unknown as Channel,
     publishMock,
@@ -45,7 +52,9 @@ describe('publish', () => {
       channel,
     );
 
-    const options = publishMock.mock.calls[0]?.[3] as Record<string, unknown>;
+    const call = publishMock.mock.calls[0];
+    expect(call).toBeDefined();
+    const options = call![3];
     expect(options.persistent).toBe(true);
     expect(options.correlationId).toBe(correlationId);
   });
@@ -61,7 +70,9 @@ describe('publish', () => {
 
     await publish(envelope, channel);
 
-    const body = publishMock.mock.calls[0]?.[2] as Buffer;
+    const call = publishMock.mock.calls[0];
+    expect(call).toBeDefined();
+    const body = call![2];
     const decoded = JSON.parse(body.toString());
 
     expect(decoded.eventId).toBe(envelope.eventId);

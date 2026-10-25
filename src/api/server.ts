@@ -11,8 +11,11 @@ import openapi from '@elysiajs/openapi';
 import Elysia from 'elysia';
 import logger from '@lucas-pmelo/logger';
 import z from 'zod';
+import { registerServiceOrderRoutes } from './service-order-routes';
 
 export const app = new Elysia();
+
+registerServiceOrderRoutes(app);
 
 if (tracing) {
   app.use(tracing);
@@ -91,9 +94,13 @@ app.get('/', ({ redirect }) => redirect('/swagger'), {
 
 /* c8 ignore next */
 if (import.meta.main) {
-  app.listen(3000, () => {
+  const port = Number(process.env.PORT ?? 3000);
+
+  app.listen(port, () => {
+    const serverPort = app.server?.port ?? port;
+
     logger.info({
-      message: 'Server is running on http://localhost:3000/swagger',
+      message: `Server is running on http://localhost:${serverPort}/swagger`,
     });
   });
 }
