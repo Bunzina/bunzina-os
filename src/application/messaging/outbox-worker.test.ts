@@ -61,14 +61,31 @@ describe('outbox worker', () => {
     expect(failures).toEqual([['message-id', 'broker unavailable']]);
   });
 
-  test('should start a polling timer', () => {
+  test('should run the polling callback', () => {
+    const originalSetInterval = globalThis.setInterval;
+    let poll: (() => void) | undefined;
+    let pendingCalls = 0;
+    const timer = originalSetInterval(() => {}, 60_000);
+
+    globalThis.setInterval = ((callback: Parameters<typeof setInterval>[0]) => {
+      poll = callback as () => void;
+      return timer;
+    }) as typeof setInterval;
+
     const worker = new OutboxWorker({
-      findPending: async () => [],
+      findPending: async () => {
+        pendingCalls += 1;
+        return [];
+      },
     } as unknown as OutboxRepository);
 
-    const timer = worker.start(60_000);
-    clearInterval(timer);
-
-    expect(timer).toBeDefined();
+    try {
+      expect(worker.start(60_000)).toBe(timer);
+      poll?.();
+      expect(pendingCalls).toBe(1);
+    } finally {
+      globalThis.setInterval = originalSetInterval;
+      clearInterval(timer);
+    }
   });
 });
