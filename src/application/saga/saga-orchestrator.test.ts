@@ -339,4 +339,65 @@ describe('saga orchestrator', () => {
     );
     expect(saga.status).toBe(SagaStatus.FAILED);
   });
+
+  test('should select the right command for each timeout stage', async () => {
+    const commands: Envelope[] = [];
+    let currentSaga = new SagaInstance({
+      serviceOrderId,
+      status: SagaStatus.RUNNING,
+      currentStep: SagaStep.EXECUTION,
+      paymentId,
+      paymentAmountCents: 20000,
+    });
+    const sagaRepository = {
+      findByServiceOrderId: async () => currentSaga,
+      findExpired: async () => [],
+      create: async (value: SagaInstance) => value,
+      update: async (value: SagaInstance) => {
+        currentSaga = value;
+        return value;
+      },
+    } as SagaInstanceRepository;
+    const orchestrator = new SagaOrchestrator(
+      sagaRepository,
+      {} as ServiceOrderRepository,
+      async (command) => {
+        commands.push(command);
+      },
+    );
+
+    await orchestrator.handleTimeout(currentSaga);
+    expect(commands.at(-1)?.eventType).toBe('cmd.workshop.abort');
+
+    currentSaga = new SagaInstance({
+      serviceOrderId,
+      status: SagaStatus.RUNNING,
+      currentStep: SagaStep.QUOTE,
+      quoteId,
+    });
+    await orchestrator.handleTimeout(currentSaga);
+    expect(commands.at(-1)?.eventType).toBe('cmd.billing.cancel-quote');
+
+    currentSaga = new SagaInstance({
+      serviceOrderId,
+      status: SagaStatus.RUNNING,
+      currentStep: SagaStep.DIAGNOSTIC,
+    });
+    await orchestrator.handleTimeout(currentSaga);
+    expect(commands.at(-1)?.eventType).toBe('cmd.workshop.abort');
+
+    currentSaga = new SagaInstance({
+      serviceOrderId,
+      status: SagaStatus.RUNNING,
+      currentStep: SagaStep.DIAGNOSTIC,
+    });
+    await orchestrator.handle(
+      event('evt.workshop.diagnostic-failed', {
+        serviceOrderId,
+        reason: 'UNREPAIRABLE',
+        detail: 'Vehicle cannot be repaired',
+      }),
+    );
+    expect(commands.at(-1)?.eventType).toBe('cmd.workshop.abort');
+  });
 });
