@@ -3,10 +3,13 @@ import { z } from 'zod';
 import { CreateServiceOrderUseCase } from '@/application/use-cases/service-order/create';
 import { FindServiceOrderByIdUseCase } from '@/application/use-cases/service-order/find-by-id';
 import { ListServiceOrdersUseCase } from '@/application/use-cases/service-order/list';
+import { SagaOrchestrator } from '@/application/saga/saga-orchestrator';
+import { publish } from '@/infrastructure/messaging/publisher';
 import { ServiceOrderStatus } from '@/domain/service-order/types/service-order-status';
 import { serviceOrderToResponse } from '@/adapters/output/service-order-presenter';
 import { db } from '@/infrastructure/configs/database';
 import { ServiceOrderRepository } from '@/infrastructure/repositories/service-order/service-order-repository';
+import { SagaInstanceRepository } from '@/infrastructure/repositories/saga/saga-instance-repository';
 import {
   CatalogServiceError,
   HttpCatalogService,
@@ -61,11 +64,18 @@ const jsonError = (
 const dependencies = () => {
   const repository = new ServiceOrderRepository(db);
   const catalog = new HttpCatalogService();
+  const sagaRepository = new SagaInstanceRepository(db);
+  const orchestrator = new SagaOrchestrator(
+    sagaRepository,
+    repository,
+    (command) => publish(command),
+  );
 
   return {
     create: new CreateServiceOrderUseCase(repository, catalog),
     findById: new FindServiceOrderByIdUseCase(repository),
     list: new ListServiceOrdersUseCase(repository),
+    orchestrator,
   };
 };
 
@@ -78,7 +88,9 @@ export const registerServiceOrderRoutes = (app: Elysia) => {
         return jsonError(set, 400, 'Invalid service order data');
 
       try {
-        const order = await dependencies().create.execute(parsed.data);
+        const serviceDependencies = dependencies();
+        const order = await serviceDependencies.create.execute(parsed.data);
+        await serviceDependencies.orchestrator.start(order);
         return Response.json(serviceOrderToResponse(order), { status: 201 });
       } catch (error) {
         return handleCatalogError(set, error);

@@ -8,6 +8,9 @@ export interface SagaInstanceProps {
   completedSteps?: SagaStep[];
   stepDeadlineAt?: Date;
   lastError?: string;
+  quoteId?: string;
+  paymentId?: string;
+  paymentAmountCents?: number;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -19,6 +22,9 @@ export class SagaInstance {
   completedSteps: SagaStep[];
   stepDeadlineAt?: Date;
   lastError?: string;
+  quoteId?: string;
+  paymentId?: string;
+  paymentAmountCents?: number;
   createdAt: Date;
   updatedAt: Date;
 
@@ -29,6 +35,9 @@ export class SagaInstance {
     completedSteps = [],
     stepDeadlineAt,
     lastError,
+    quoteId,
+    paymentId,
+    paymentAmountCents,
     createdAt = new Date(),
     updatedAt = new Date(),
   }: SagaInstanceProps) {
@@ -38,6 +47,9 @@ export class SagaInstance {
     this.completedSteps = [...completedSteps];
     this.stepDeadlineAt = stepDeadlineAt;
     this.lastError = lastError;
+    this.quoteId = quoteId;
+    this.paymentId = paymentId;
+    this.paymentAmountCents = paymentAmountCents;
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
   }
@@ -65,6 +77,17 @@ export class SagaInstance {
   fail(reason: string): void {
     this.status = SagaStatus.FAILED;
     this.lastError = reason;
+    this.updatedAt = new Date();
+  }
+
+  setQuote(quoteId: string): void {
+    this.quoteId = quoteId;
+    this.updatedAt = new Date();
+  }
+
+  setPayment(paymentId: string, amountCents: number): void {
+    this.paymentId = paymentId;
+    this.paymentAmountCents = amountCents;
     this.updatedAt = new Date();
   }
 }
