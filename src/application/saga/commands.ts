@@ -136,3 +136,70 @@ export const buildStartExecutionCommand = (
       },
     },
   });
+
+export const buildCancelQuoteCommand = ({
+  serviceOrderId,
+  quoteId,
+  reason,
+  detail,
+  causationId,
+}: {
+  serviceOrderId: string;
+  quoteId: string;
+  reason: string;
+  detail: string;
+  causationId?: string;
+}): Envelope =>
+  buildEnvelope({
+    eventType: 'cmd.billing.cancel-quote',
+    correlationId: serviceOrderId,
+    causationId,
+    data: { serviceOrderId, quoteId, reason, detail },
+  });
+
+export const buildRefundCommand = ({
+  serviceOrderId,
+  paymentId,
+  amountCents,
+  reason,
+  detail,
+  causationId,
+}: {
+  serviceOrderId: string;
+  paymentId: string;
+  amountCents: number;
+  reason: string;
+  detail: string;
+  causationId?: string;
+}): Envelope =>
+  buildEnvelope({
+    eventType: 'cmd.billing.refund',
+    correlationId: serviceOrderId,
+    causationId,
+    data: {
+      serviceOrderId,
+      paymentId,
+      amountCents,
+      currency: DEFAULT_CURRENCY,
+      reason,
+      detail,
+    },
+  });
+
+export const buildAbortExecutionCommand = ({
+  serviceOrderId,
+  reason,
+  detail,
+  causationId,
+}: {
+  serviceOrderId: string;
+  reason: string;
+  detail: string;
+  causationId?: string;
+}): Envelope =>
+  buildEnvelope({
+    eventType: 'cmd.workshop.abort',
+    correlationId: serviceOrderId,
+    causationId,
+    data: { serviceOrderId, reason, detail },
+  });

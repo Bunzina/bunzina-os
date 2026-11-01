@@ -20,6 +20,19 @@ export class SagaInstanceRepository implements SagaInstanceRepositoryPort {
     return record ? SagaInstanceMapper.toDomain(record) : null;
   }
 
+  async findExpired(now: Date): Promise<SagaInstance[]> {
+    const records = await this.client<SagaInstanceDbSchema[]>`
+      SELECT *
+      FROM bunzina.saga_instances
+      WHERE status IN ('RUNNING', 'COMPENSATING')
+        AND step_deadline_at IS NOT NULL
+        AND step_deadline_at <= ${now}
+      ORDER BY step_deadline_at ASC
+    `;
+
+    return records.map(SagaInstanceMapper.toDomain);
+  }
+
   async create(saga: SagaInstance): Promise<SagaInstance> {
     const record = SagaInstanceMapper.toDatabase(saga);
 

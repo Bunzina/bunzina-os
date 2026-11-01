@@ -90,4 +90,14 @@ export class SagaInstance {
     this.paymentAmountCents = amountCents;
     this.updatedAt = new Date();
   }
+
+  setStepDeadline(deadline: Date): void {
+    this.stepDeadlineAt = deadline;
+    this.updatedAt = new Date();
+  }
+
+  clearStepDeadline(): void {
+    this.stepDeadlineAt = undefined;
+    this.updatedAt = new Date();
+  }
 }

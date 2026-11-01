@@ -67,6 +67,7 @@ describe('saga orchestrator', () => {
     const commands: Envelope[] = [];
     const sagaRepository: SagaInstanceRepository = {
       findByServiceOrderId: async () => null,
+      findExpired: async () => [],
       create: async (saga) => {
         createdSagas.push(saga);
         return saga;
@@ -95,6 +96,8 @@ describe('saga orchestrator', () => {
       status: SagaStatus.RUNNING,
       currentStep: SagaStep.DIAGNOSTIC,
       completedSteps: [],
+      stepDeadlineAt: expect.any(Date),
+      lastError: undefined,
       createdAt: expect.any(Date),
       updatedAt: expect.any(Date),
       quoteId: undefined,
@@ -115,6 +118,7 @@ describe('saga orchestrator', () => {
     const commands: Envelope[] = [];
     const sagaRepository: SagaInstanceRepository = {
       findByServiceOrderId: async () => saga,
+      findExpired: async () => [],
       create: async (value) => value,
       update: async (value) => value,
     };
@@ -235,5 +239,104 @@ describe('saga orchestrator', () => {
         }),
       ),
     ).rejects.toThrow(`Saga not found: ${serviceOrderId}`);
+  });
+
+  test('should cancel the quote when payment fails', async () => {
+    const order = makeOrder();
+    const saga = new SagaInstance({
+      serviceOrderId,
+      status: SagaStatus.RUNNING,
+      currentStep: SagaStep.PAYMENT,
+      quoteId,
+    });
+    const commands: Envelope[] = [];
+    const updatedOrders: ServiceOrder[] = [];
+    const sagaRepository = {
+      findByServiceOrderId: async () => saga,
+      findExpired: async () => [],
+      create: async (value: SagaInstance) => value,
+      update: async (value: SagaInstance) => value,
+    } as SagaInstanceRepository;
+    const serviceOrderRepository = {
+      findById: async () => order,
+      update: async (value: ServiceOrder) => {
+        updatedOrders.push(value);
+        return value;
+      },
+    } as unknown as ServiceOrderRepository;
+    const orchestrator = new SagaOrchestrator(
+      sagaRepository,
+      serviceOrderRepository,
+      async (command) => {
+        commands.push(command);
+      },
+    );
+
+    await orchestrator.handle(
+      event('evt.billing.payment-failed', {
+        serviceOrderId,
+        quoteId,
+        reason: 'EXPIRED',
+        detail: 'PIX expired',
+      }),
+    );
+    expect(commands[0]?.eventType).toBe('cmd.billing.cancel-quote');
+
+    await orchestrator.handle(
+      event('evt.billing.quote-canceled', { serviceOrderId, quoteId }),
+    );
+    expect(saga.status).toBe(SagaStatus.FAILED);
+    expect(updatedOrders.at(-1)?.status).toBe(ServiceOrderStatus.CANCELED);
+  });
+
+  test('should abort and refund after an execution failure', async () => {
+    const order = new ServiceOrder({
+      ...makeOrder(),
+      status: ServiceOrderStatus.IN_EXECUTION,
+    });
+    const saga = new SagaInstance({
+      serviceOrderId,
+      status: SagaStatus.RUNNING,
+      currentStep: SagaStep.EXECUTION,
+      paymentId,
+      paymentAmountCents: 20000,
+    });
+    const commands: Envelope[] = [];
+    const sagaRepository = {
+      findByServiceOrderId: async () => saga,
+      findExpired: async () => [],
+      create: async (value: SagaInstance) => value,
+      update: async (value: SagaInstance) => value,
+    } as SagaInstanceRepository;
+    const serviceOrderRepository = {
+      findById: async () => order,
+      update: async (value: ServiceOrder) => value,
+    } as unknown as ServiceOrderRepository;
+    const orchestrator = new SagaOrchestrator(
+      sagaRepository,
+      serviceOrderRepository,
+      async (command) => {
+        commands.push(command);
+      },
+    );
+
+    await orchestrator.handle(
+      event('evt.workshop.execution-failed', {
+        serviceOrderId,
+        reason: 'PART_UNAVAILABLE',
+        detail: 'Part unavailable',
+      }),
+    );
+    expect(commands[0]?.eventType).toBe('cmd.workshop.abort');
+
+    await orchestrator.handle(
+      event('evt.workshop.execution-aborted', { serviceOrderId }),
+    );
+    expect(commands[1]?.eventType).toBe('cmd.billing.refund');
+
+    await orchestrator.handle(
+      event('evt.billing.payment-refunded', { serviceOrderId, paymentId }),
+    );
+    expect(saga.status).toBe(SagaStatus.FAILED);
   });
 });
