@@ -4,12 +4,13 @@ import { CreateServiceOrderUseCase } from '@/application/use-cases/service-order
 import { FindServiceOrderByIdUseCase } from '@/application/use-cases/service-order/find-by-id';
 import { ListServiceOrdersUseCase } from '@/application/use-cases/service-order/list';
 import { SagaOrchestrator } from '@/application/saga/saga-orchestrator';
-import { publish } from '@/infrastructure/messaging/publisher';
+import { OutboxCommandPublisher } from '@/application/messaging/outbox-command-publisher';
 import { ServiceOrderStatus } from '@/domain/service-order/types/service-order-status';
 import { serviceOrderToResponse } from '@/adapters/output/service-order-presenter';
 import { db } from '@/infrastructure/configs/database';
 import { ServiceOrderRepository } from '@/infrastructure/repositories/service-order/service-order-repository';
 import { SagaInstanceRepository } from '@/infrastructure/repositories/saga/saga-instance-repository';
+import { OutboxRepository } from '@/infrastructure/repositories/outbox/outbox-repository';
 import {
   CatalogServiceError,
   HttpCatalogService,
@@ -65,10 +66,12 @@ const dependencies = () => {
   const repository = new ServiceOrderRepository(db);
   const catalog = new HttpCatalogService();
   const sagaRepository = new SagaInstanceRepository(db);
+  const outboxRepository = new OutboxRepository(db);
+  const commandPublisher = new OutboxCommandPublisher(outboxRepository);
   const orchestrator = new SagaOrchestrator(
     sagaRepository,
     repository,
-    (command) => publish(command),
+    (command) => commandPublisher.publish(command),
   );
 
   return {

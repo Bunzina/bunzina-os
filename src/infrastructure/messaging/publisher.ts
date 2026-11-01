@@ -36,6 +36,10 @@ export const publish = async <TData extends Record<string, unknown>>(
           },
         );
 
+        if ('waitForConfirms' in channel) {
+          await channel.waitForConfirms();
+        }
+
         messagesPublishedTotal.inc({ event_type: envelope.eventType });
       } finally {
         span.end();

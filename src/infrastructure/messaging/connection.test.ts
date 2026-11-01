@@ -4,6 +4,7 @@ const assertExchange = mock(async () => ({}) as never);
 const assertQueue = mock(async () => ({}) as never);
 const bindQueue = mock(async () => ({}) as never);
 const prefetch = mock(async () => 0);
+const waitForConfirms = mock(async () => {});
 const closeChannel = mock(async () => {});
 const closeConnectionMock = mock(async () => {});
 const createChannel = mock(async () => ({
@@ -11,13 +12,14 @@ const createChannel = mock(async () => ({
   assertQueue,
   bindQueue,
   prefetch,
+  waitForConfirms,
   close: closeChannel,
 }));
 
 mock.module('amqplib', () => ({
   default: {
     connect: mock(async () => ({
-      createChannel,
+      createConfirmChannel: createChannel,
       close: closeConnectionMock,
     })),
   },
