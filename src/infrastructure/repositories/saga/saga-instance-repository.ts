@@ -31,6 +31,9 @@ export class SagaInstanceRepository implements SagaInstanceRepositoryPort {
         completed_steps,
         step_deadline_at,
         last_error,
+        quote_id,
+        payment_id,
+        payment_amount_cents,
         created_at,
         updated_at
       ) VALUES (
@@ -40,6 +43,9 @@ export class SagaInstanceRepository implements SagaInstanceRepositoryPort {
         ${JSON.stringify(record.completed_steps)},
         ${record.step_deadline_at},
         ${record.last_error},
+        ${record.quote_id},
+        ${record.payment_id},
+        ${record.payment_amount_cents},
         ${record.created_at},
         ${record.updated_at}
       )
@@ -58,6 +64,9 @@ export class SagaInstanceRepository implements SagaInstanceRepositoryPort {
           completed_steps = ${JSON.stringify(record.completed_steps)},
           step_deadline_at = ${record.step_deadline_at},
           last_error = ${record.last_error},
+          quote_id = ${record.quote_id},
+          payment_id = ${record.payment_id},
+          payment_amount_cents = ${record.payment_amount_cents},
           updated_at = ${record.updated_at}
       WHERE service_order_id = ${record.service_order_id}
     `;

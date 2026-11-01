@@ -29,6 +29,9 @@ describe('saga instance mapper', () => {
       completed_steps: [SagaStep.DIAGNOSTIC, SagaStep.QUOTE],
       step_deadline_at: deadline,
       last_error: 'TIMEOUT',
+      quote_id: null,
+      payment_id: null,
+      payment_amount_cents: null,
       created_at: createdAt,
       updated_at: updatedAt,
     });
