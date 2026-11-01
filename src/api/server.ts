@@ -12,6 +12,7 @@ import Elysia from 'elysia';
 import logger from '@lucas-pmelo/logger';
 import z from 'zod';
 import { registerServiceOrderRoutes } from './service-order-routes';
+import { startSagaMessaging } from '@/application/messaging/saga-messaging-bootstrap';
 
 export const app = new Elysia();
 
@@ -101,6 +102,13 @@ if (import.meta.main) {
 
     logger.info({
       message: `Server is running on http://localhost:${serverPort}/swagger`,
+    });
+
+    void startSagaMessaging().catch((error) => {
+      logger.error({
+        message: 'Failed to start saga messaging',
+        error: error instanceof Error ? error.message : String(error),
+      });
     });
   });
 }

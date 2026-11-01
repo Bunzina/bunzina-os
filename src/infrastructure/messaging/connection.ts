@@ -1,4 +1,4 @@
-import amqp, { type Channel, type ChannelModel } from 'amqplib';
+import amqp, { type ChannelModel, type ConfirmChannel } from 'amqplib';
 
 export const EXCHANGE = process.env.RABBITMQ_EXCHANGE || 'bunzina.events';
 export const QUEUE = process.env.RABBITMQ_QUEUE || 'bunzina-os.inbox';
@@ -6,9 +6,9 @@ export const DLX = `${EXCHANGE}.dlx`;
 export const DLQ = `${QUEUE}.dlq`;
 
 let connection: ChannelModel | null = null;
-let channel: Channel | null = null;
+let channel: ConfirmChannel | null = null;
 
-export const getChannel = async (): Promise<Channel> => {
+export const getChannel = async (): Promise<ConfirmChannel> => {
   if (channel) {
     return channel;
   }
@@ -20,7 +20,7 @@ export const getChannel = async (): Promise<Channel> => {
   }
 
   connection = await amqp.connect(url);
-  channel = await connection.createChannel();
+  channel = await connection.createConfirmChannel();
 
   await assertTopology(channel);
 
@@ -29,7 +29,7 @@ export const getChannel = async (): Promise<Channel> => {
   return channel;
 };
 
-const assertTopology = async (ch: Channel): Promise<void> => {
+const assertTopology = async (ch: ConfirmChannel): Promise<void> => {
   await ch.assertExchange(EXCHANGE, 'topic', { durable: true });
   await ch.assertExchange(DLX, 'topic', { durable: true });
 
