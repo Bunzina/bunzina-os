@@ -1,0 +1,6 @@
+export enum SagaStep {
+  DIAGNOSTIC = 'DIAGNOSTIC',
+  QUOTE = 'QUOTE',
+  PAYMENT = 'PAYMENT',
+  EXECUTION = 'EXECUTION',
+}

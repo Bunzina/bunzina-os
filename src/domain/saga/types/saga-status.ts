@@ -1,0 +1,6 @@
+export enum SagaStatus {
+  RUNNING = 'RUNNING',
+  COMPENSATING = 'COMPENSATING',
+  COMPLETED = 'COMPLETED',
+  FAILED = 'FAILED',
+}
