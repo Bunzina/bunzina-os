@@ -1,10 +1,14 @@
 import { describe, expect, it, mock } from 'bun:test';
 import { propagation } from '@opentelemetry/api';
 import { W3CTraceContextPropagator } from '@opentelemetry/core';
+import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import type { Channel } from 'amqplib';
 import { buildEnvelope } from './envelope';
 import { publish } from './publisher';
 
+new NodeTracerProvider().register({
+  propagator: new W3CTraceContextPropagator(),
+});
 propagation.setGlobalPropagator(new W3CTraceContextPropagator());
 
 const fakeChannel = () => {
@@ -77,5 +81,34 @@ describe('publish', () => {
 
     expect(decoded.eventId).toBe(envelope.eventId);
     expect(decoded.data.quoteId).toBe('abc');
+  });
+
+  it('preserves the trace context captured before an outbox publish', async () => {
+    const { channel, publishMock } = fakeChannel();
+    const traceparent =
+      '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
+    const envelope = {
+      ...buildEnvelope({
+        eventType: 'cmd.billing.issue-quote',
+        correlationId: crypto.randomUUID(),
+        data: {},
+      }),
+      traceparent,
+    };
+
+    await publish(envelope, channel);
+
+    const call = publishMock.mock.calls[0];
+    expect(call).toBeDefined();
+    const publishedTraceparent = JSON.parse(call![2].toString()).traceparent;
+    expect(publishedTraceparent).toMatch(
+      /^00-4bf92f3577b34da6a3ce929d0e0e4736-[0-9a-f]{16}-01$/,
+    );
+    expect(publishedTraceparent.split('-')[2]).not.toBe(
+      traceparent.split('-')[2],
+    );
+    expect(call![3].headers).toMatchObject({
+      traceparent: publishedTraceparent,
+    });
   });
 });

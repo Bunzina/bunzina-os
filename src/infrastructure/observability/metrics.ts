@@ -5,6 +5,9 @@ import {
   Histogram,
   Registry,
 } from 'prom-client';
+import type { SagaObservability } from '@/application/ports/saga-observability';
+import type { SagaInstance } from '@/domain/saga/entities/saga-instance';
+import { failureReasons } from '@/infrastructure/messaging/envelope';
 
 const registry = new Registry();
 
@@ -44,6 +47,80 @@ export const messagesConsumedTotal = new Counter({
   labelNames: ['event_type', 'result'],
   registers: [registry],
 });
+
+export const messagesDeadLetteredTotal = new Counter({
+  name: 'bunzina_os_messages_dead_lettered_total',
+  help: 'Total number of consumed messages sent to the dead-letter queue.',
+  labelNames: ['event_type'],
+  registers: [registry],
+});
+
+export const outboxPublishFailuresTotal = new Counter({
+  name: 'bunzina_os_outbox_publish_failures_total',
+  help: 'Total number of failed outbox publish attempts.',
+  labelNames: ['event_type'],
+  registers: [registry],
+});
+
+export const sagaStatesTotal = new Counter({
+  name: 'bunzina_os_saga_states_total',
+  help: 'Number of persisted saga states by status and step.',
+  labelNames: ['status', 'step'],
+  registers: [registry],
+});
+
+export const sagaCompensationsTotal = new Counter({
+  name: 'bunzina_os_saga_compensations_total',
+  help: 'Number of saga compensation attempts by reason.',
+  labelNames: ['reason'],
+  registers: [registry],
+});
+
+export const sagaTimeoutsTotal = new Counter({
+  name: 'bunzina_os_saga_timeouts_total',
+  help: 'Number of saga step timeouts by step.',
+  labelNames: ['step'],
+  registers: [registry],
+});
+
+export const sagaOutcomesTotal = new Counter({
+  name: 'bunzina_os_saga_outcomes_total',
+  help: 'Number of terminal saga outcomes.',
+  labelNames: ['outcome'],
+  registers: [registry],
+});
+
+export const sagaDurationSeconds = new Histogram({
+  name: 'bunzina_os_saga_duration_seconds',
+  help: 'Time from saga creation to its terminal outcome, in seconds.',
+  labelNames: ['outcome'],
+  buckets: [1, 5, 15, 30, 60, 300, 900, 3600, 86400],
+  registers: [registry],
+});
+
+const getMetricReason = (reason: string): string =>
+  failureReasons.includes(reason as (typeof failureReasons)[number])
+    ? reason
+    : 'UNKNOWN';
+
+export const sagaObservability: SagaObservability = {
+  recordState(saga: SagaInstance) {
+    sagaStatesTotal.inc({ status: saga.status, step: saga.currentStep });
+  },
+  recordCompensation(reason) {
+    sagaCompensationsTotal.inc({ reason: getMetricReason(reason) });
+  },
+  recordTimeout(step) {
+    sagaTimeoutsTotal.inc({ step });
+  },
+  recordOutcome(saga, outcome) {
+    sagaOutcomesTotal.inc({ outcome });
+    sagaDurationSeconds.observe(
+      { outcome },
+      Math.max(0, (Date.now() - saga.createdAt.getTime()) / 1000),
+    );
+  },
+};
 
 export const messageHandlingDurationSeconds = new Histogram({
   name: 'bunzina_os_message_handling_duration_seconds',

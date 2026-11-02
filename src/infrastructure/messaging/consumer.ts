@@ -1,8 +1,10 @@
 import { context, propagation, SpanKind, trace } from '@opentelemetry/api';
 import type { Channel, ConsumeMessage } from 'amqplib';
 import logger from '@lucas-pmelo/logger';
+import type { MessageProcessor } from '@/application/ports/message-processor';
 import {
   messageHandlingDurationSeconds,
+  messagesDeadLetteredTotal,
   messagesConsumedTotal,
 } from '../observability/metrics';
 import { EXCHANGE, getChannel, QUEUE } from './connection';
@@ -10,20 +12,19 @@ import { type Envelope, parseEnvelope } from './envelope';
 
 const tracer = trace.getTracer('messaging');
 
-export type MessageHandler = (envelope: Envelope) => Promise<void>;
-
-export type IdempotencyGuard = (eventId: string) => Promise<boolean>;
+const metricEventType = (eventType: string, eventTypes: readonly string[]) =>
+  eventTypes.includes(eventType) ? eventType : 'unhandled';
 
 type StartInput = {
-  handlers: Record<string, MessageHandler>;
-  isFirstDelivery: IdempotencyGuard;
+  eventTypes: readonly string[];
+  processor: MessageProcessor<Envelope>;
   bindings: string[];
   channel?: Channel;
 };
 
 export const startConsumer = async ({
-  handlers,
-  isFirstDelivery,
+  eventTypes,
+  processor,
   bindings,
   channel: channelOverride,
 }: StartInput): Promise<void> => {
@@ -47,58 +48,83 @@ export const startConsumer = async ({
   });
 
   async function handle(message: ConsumeMessage): Promise<void> {
-    const eventType = String(message.properties.type ?? 'unknown');
+    let eventType = String(message.properties.type ?? 'unknown');
 
     await tracer.startActiveSpan(
       `consume ${eventType}`,
       { kind: SpanKind.CONSUMER },
       async (span) => {
         const stopTimer = messageHandlingDurationSeconds.startTimer({
-          event_type: eventType,
+          event_type: metricEventType(eventType, eventTypes),
         });
+        let envelope: Envelope | undefined;
 
         try {
-          const envelope = parseEnvelope(
-            JSON.parse(message.content.toString()),
-          );
+          envelope = parseEnvelope(JSON.parse(message.content.toString()));
+          eventType = envelope.eventType;
 
-          if (!(await isFirstDelivery(envelope.eventId))) {
+          if (!eventTypes.includes(envelope.eventType)) {
             messagesConsumedTotal.inc({
-              event_type: eventType,
-              result: 'duplicate',
-            });
-            channel.ack(message);
-            return;
-          }
-
-          const handler = handlers[envelope.eventType];
-
-          if (!handler) {
-            messagesConsumedTotal.inc({
-              event_type: eventType,
+              event_type: metricEventType(eventType, eventTypes),
               result: 'unhandled',
+            });
+            messagesDeadLetteredTotal.inc({
+              event_type: metricEventType(eventType, eventTypes),
             });
             channel.nack(message, false, false);
             return;
           }
 
-          await handler(envelope);
+          const firstDelivery = await processor.process(envelope);
+
+          if (!firstDelivery) {
+            messagesConsumedTotal.inc({
+              event_type: metricEventType(eventType, eventTypes),
+              result: 'duplicate',
+            });
+            logger.info({
+              message: 'duplicate message ignored',
+              eventType,
+              serviceOrderId: envelope.correlationId,
+              eventId: envelope.eventId,
+              causationId: envelope.causationId,
+            });
+            channel.ack(message);
+            return;
+          }
 
           messagesConsumedTotal.inc({
-            event_type: eventType,
+            event_type: metricEventType(eventType, eventTypes),
             result: 'success',
+          });
+          logger.info({
+            message: 'message processed',
+            eventType,
+            serviceOrderId: envelope.correlationId,
+            eventId: envelope.eventId,
+            causationId: envelope.causationId,
           });
           channel.ack(message);
         } catch (error) {
           logger.error({
             message: 'failed to handle message',
             eventType,
+            ...(envelope
+              ? {
+                  serviceOrderId: envelope.correlationId,
+                  eventId: envelope.eventId,
+                  causationId: envelope.causationId,
+                }
+              : {}),
             error: error instanceof Error ? error.message : String(error),
           });
 
           messagesConsumedTotal.inc({
-            event_type: eventType,
+            event_type: metricEventType(eventType, eventTypes),
             result: 'failure',
+          });
+          messagesDeadLetteredTotal.inc({
+            event_type: metricEventType(eventType, eventTypes),
           });
           channel.nack(message, false, false);
         } finally {

@@ -68,6 +68,7 @@ describe('saga orchestrator', () => {
     const sagaRepository: SagaInstanceRepository = {
       findByServiceOrderId: async () => null,
       findExpired: async () => [],
+      claimExpired: async () => null,
       create: async (saga) => {
         createdSagas.push(saga);
         return saga;
@@ -119,6 +120,7 @@ describe('saga orchestrator', () => {
     const sagaRepository: SagaInstanceRepository = {
       findByServiceOrderId: async () => saga,
       findExpired: async () => [],
+      claimExpired: async () => null,
       create: async (value) => value,
       update: async (value) => value,
     };
@@ -254,6 +256,7 @@ describe('saga orchestrator', () => {
     const sagaRepository = {
       findByServiceOrderId: async () => saga,
       findExpired: async () => [],
+      claimExpired: async () => null,
       create: async (value: SagaInstance) => value,
       update: async (value: SagaInstance) => value,
     } as SagaInstanceRepository;
@@ -305,6 +308,7 @@ describe('saga orchestrator', () => {
     const sagaRepository = {
       findByServiceOrderId: async () => saga,
       findExpired: async () => [],
+      claimExpired: async () => null,
       create: async (value: SagaInstance) => value,
       update: async (value: SagaInstance) => value,
     } as SagaInstanceRepository;
@@ -352,6 +356,7 @@ describe('saga orchestrator', () => {
     const sagaRepository = {
       findByServiceOrderId: async () => currentSaga,
       findExpired: async () => [],
+      claimExpired: async () => null,
       create: async (value: SagaInstance) => value,
       update: async (value: SagaInstance) => {
         currentSaga = value;

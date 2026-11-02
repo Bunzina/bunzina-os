@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
 import { EXCHANGE, QUEUE } from './connection';
 import { startConsumer } from './consumer';
+import type { MessageProcessor } from '@/application/ports/message-processor';
 import { buildEnvelope } from './envelope';
 
 const ack = mock(() => {});
@@ -38,12 +39,14 @@ const messageFor = (eventType: string) => {
 };
 
 const start = async (overrides: {
-  handlers?: Record<string, () => Promise<void>>;
-  isFirstDelivery?: () => Promise<boolean>;
+  eventTypes?: string[];
+  processor?: MessageProcessor<ReturnType<typeof buildEnvelope>>;
 }) => {
   await startConsumer({
-    handlers: overrides.handlers ?? {},
-    isFirstDelivery: overrides.isFirstDelivery ?? (async () => true),
+    eventTypes: overrides.eventTypes ?? ['cmd.billing.charge'],
+    processor: overrides.processor ?? {
+      process: async () => true,
+    },
     bindings: ['cmd.billing.*'],
     channel: channel as never,
   });
@@ -72,40 +75,44 @@ describe('startConsumer', () => {
   });
 
   it('runs the handler and acks a first delivery', async () => {
-    const handler = mock(async () => {});
-    await start({ handlers: { 'cmd.billing.charge': handler } });
+    const processor = mock(async () => true);
+    await start({ processor: { process: processor } });
 
     await consumeCallback?.(messageFor('cmd.billing.charge').message);
 
-    expect(handler).toHaveBeenCalled();
+    expect(processor).toHaveBeenCalled();
     expect(ack).toHaveBeenCalled();
   });
 
-  it('acks without running the handler when the event was already processed', async () => {
-    const handler = mock(async () => {});
+  it('acks without running orchestration when the event was already processed', async () => {
+    const processor = mock(async () => false);
     await start({
-      handlers: { 'cmd.billing.charge': handler },
-      isFirstDelivery: async () => false,
+      processor: { process: processor },
     });
 
     await consumeCallback?.(messageFor('cmd.billing.charge').message);
 
-    expect(handler).not.toHaveBeenCalled();
+    expect(processor).toHaveBeenCalled();
     expect(ack).toHaveBeenCalled();
   });
 
   it('dead letters a message nobody handles', async () => {
-    await start({});
+    const processor = mock(async () => true);
+    await start({
+      eventTypes: ['cmd.billing.charge'],
+      processor: { process: processor },
+    });
 
     await consumeCallback?.(messageFor('cmd.billing.refund').message);
 
     expect(nack).toHaveBeenCalledWith(expect.anything(), false, false);
+    expect(processor).not.toHaveBeenCalled();
   });
 
-  it('dead letters a message whose handler threw', async () => {
+  it('dead letters a message whose processor threw', async () => {
     await start({
-      handlers: {
-        'cmd.billing.charge': async () => {
+      processor: {
+        process: async () => {
           throw new Error('boom');
         },
       },
@@ -113,6 +120,40 @@ describe('startConsumer', () => {
 
     await consumeCallback?.(messageFor('cmd.billing.charge').message);
 
+    expect(nack).toHaveBeenCalledWith(expect.anything(), false, false);
+  });
+
+  it('allows a DLQ-redriven event after its failed transaction rolls back', async () => {
+    let attempts = 0;
+    const process = mock(async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error('temporary failure');
+      return true;
+    });
+
+    await start({
+      processor: { process },
+    });
+    const delivery = messageFor('cmd.billing.charge').message;
+
+    await consumeCallback?.(delivery);
+    await consumeCallback?.(delivery);
+
+    expect(process).toHaveBeenCalledTimes(2);
+    expect(nack).toHaveBeenCalledTimes(1);
+    expect(ack).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not process events outside the registered event types', async () => {
+    const process = mock(async () => true);
+    await start({
+      eventTypes: ['evt.billing.payment-confirmed'],
+      processor: { process },
+    });
+
+    await consumeCallback?.(messageFor('cmd.billing.refund').message);
+
+    expect(process).not.toHaveBeenCalled();
     expect(nack).toHaveBeenCalledWith(expect.anything(), false, false);
   });
 

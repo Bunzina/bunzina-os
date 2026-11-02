@@ -369,3 +369,18 @@ bun run fmt:check
 
 PRs que alterarem migrations ou integração devem também executar o `docker-compose` e
 validar `/health`, `/ready` e `/swagger`.
+
+
+## Status atual da implementação: PR 7
+
+Os cenários BDD em `src/application/saga/saga-orchestrator.bdd.test.ts` usam
+repositórios em memória e cobrem o fluxo feliz, o estorno após a confirmação do
+pagamento, a rejeição do orçamento e o timeout. Os testes do consumer cobrem mensagens
+duplicadas e o reprocessamento de mensagens redirecionadas para a DLQ após uma falha no
+handler. Esses testes verificam a orquestração do `bunzina-os` sem exigir que Billing e
+Workshop estejam em execução. O E2E entre os serviços fica para quando essas
+dependências estiverem prontas.
+
+O worker de timeout é iniciado junto com o consumer e o worker da outbox. O contexto de
+trace W3C é armazenado no envelope da outbox para que uma publicação posterior continue
+o trace iniciado pela API ou por um evento consumido.

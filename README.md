@@ -1,86 +1,87 @@
-# Template de microsserviço — Fase 4
+# bunzina-os
 
-Base para o `bunzina-os`, o `bunzina-billing` e o `bunzina-workshop`. Reúne o que
-os três precisam ter igual: pipeline, gate de cobertura, chart, bootstrap de
-observabilidade e o cliente de mensageria com propagação de trace.
+Microsserviço responsável por ordens de serviço e pela orquestração da Saga de
+diagnóstico, orçamento, pagamento e execução. O serviço mantém seus dados no
+PostgreSQL e publica comandos por uma outbox no RabbitMQ.
 
-Derivado do `bunzina`: o workflow de deploy veio do `.github/workflows/deploy-k8s.yml`,
-o chart do `charts/bunzina-chart` e o `tracing.ts` do `src/infrastructure/observability`.
+## Responsabilidades
 
-## Como usar
+- Criar, consultar e listar ordens de serviço.
+- Persistir o estado da ordem, da Saga e dos eventos processados.
+- Decidir o próximo comando a partir dos eventos de Billing e Workshop.
+- Compensar falhas na ordem inversa: abortar a execução e, depois, estornar o pagamento.
+- Detectar prazos vencidos e expor health checks, métricas e traces.
+
+Billing é dono de orçamentos e pagamentos. Workshop é dono de diagnóstico e execução.
+O `bunzina-os` integra esses serviços pelos contratos de eventos; ele não acessa os
+bancos deles. O contrato compartilhado está em
+[events-saga-contracts.md](https://github.com/Bunzina/bunzina/blob/main/docs/contracts/events-saga-contracts.md)
+e a decisão arquitetural está no [RFC da Saga](docs/rfc-saga-orchestration-implementation.md).
+
+## Fluxos
+
+O `serviceOrderId` é o `correlationId` de toda a Saga.
+
+Veja os diagramas de [caminho feliz e compensação](docs/saga-orchestration.md).
+
+Se a execução falhar depois da confirmação do pagamento, o OS publica
+`cmd.workshop.abort`; após `evt.workshop.execution-aborted`, publica
+`cmd.billing.refund`. A ordem termina como `CANCELED` após o evento de estorno.
+Uma rejeição do orçamento é um desfecho de negócio: a ordem volta para `RECEIVED` sem
+compensação.
+
+## Executar localmente
+
+Requisitos: [Bun 1.4.4](https://bun.sh/) e Docker Compose.
 
 ```bash
-./scripts/init-service.sh bunzina-os ../../bunzina-os
-cd ../../bunzina-os && bun install && bun test
+bun install
+bun test
+bun run lint
+bun run fmt:check
 ```
 
-O script copia a pasta, renomeia o chart e substitui dois placeholders:
+Para subir o PostgreSQL e o RabbitMQ locais, aplicar migrations e iniciar a API:
 
-| Placeholder | Vira | Onde aparece |
-| --- | --- | --- |
-| `bunzina-os` | `bunzina-os` | package.json, chart, workflows, compose, Sonar |
-| `bunzina_os` | `bunzina_os` | nomes das métricas Prometheus |
+```bash
+docker compose up --build -d db rabbitmq
+docker compose run --rm app bun run migration
+docker compose up --build app
+```
 
-O `__AWS_ACCOUNT_ID__` **não** é substituído pelo script. Ele é injetado pelo
-workflow de deploy a partir do secret, como já acontece no `bunzina`.
+O Compose publica a API em `http://localhost:3000`, o PostgreSQL em `localhost:5432`
+e a interface de gerenciamento do RabbitMQ em `http://localhost:15672`.
 
-## O que vem pronto
+## API e operação
 
-**Gate de cobertura ligado.** O `bunfig.ci.toml` tem `coverage = true` e
-`coverageThreshold` de 80% nas quatro dimensões. É o que o CI executa, então
-cobertura abaixo disso reprova o PR. Esta é a correção do problema que o `bunzina`
-tinha: lá o arquivo de CI vinha com `coverage = false` e o gate não existia na
-prática.
+- `GET /health`: verifica se o processo HTTP está respondendo.
+- `GET /ready`: verifica a conexão com o PostgreSQL.
+- `GET /metrics`: métricas no formato Prometheus.
+- `GET /swagger`: documentação OpenAPI.
+- `POST /service-orders`: cria a ordem e inicia o diagnóstico.
+- `GET /service-orders/:id`: consulta uma ordem.
+- `GET /service-orders`: lista ordens com paginação e filtros.
 
-**Dois workflows.** O `ci.yml` roda em PR — lint, formato, testes com cobertura e
-scan do SonarCloud. O `deploy-k8s.yml` roda no push para `main` — testes,
-migrations por port-forward, build e push no ECR, e `helm upgrade --install`.
+O intervalo de polling da outbox pode ser definido por `OUTBOX_POLL_INTERVAL_MS`. O
+worker da Saga aceita `SAGA_TIMEOUT_POLL_INTERVAL_MS`. Ambos usam `1000` ms como
+padrão. Para exportar traces, configure `OTEL_EXPORTER_OTLP_ENDPOINT` ou
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`.
 
-**Chart umbrella** consumindo o `app-chart` do `bunzina-chart` por OCI, com HPA,
-ServiceMonitor, probes e o Postgres próprio do serviço
-([ADR 0012](../../docs/arch/adrs/0012-microservices-split.md)). O `bunzina-workshop`
-desliga o `database` e aponta para o MongoDB Atlas
-([ADR 0014](../../docs/arch/adrs/0014-mongodb-workshop.md)).
+As métricas da Saga incluem estados persistidos, duração terminal, compensações e
+timeouts. O consumer também expõe mensagens processadas, duplicadas, falhas e enviadas
+à DLQ; a outbox registra falhas de publicação. Logs de mensagens incluem
+`serviceOrderId`, `eventId` e `causationId`, e o contexto W3C é propagado pelo envelope,
+RabbitMQ e outbox.
 
-**RabbitMQ no `docker-compose`**, o mesmo broker que roda no cluster. A paridade é
-o que permite ensaiar falha e compensação antes de gravar
-([ADR 0015](../../docs/arch/adrs/0015-rabbitmq-broker.md)).
+## Testes da Saga
 
-## `src/infrastructure/messaging`
+Os cenários BDD em `src/application/saga/saga-orchestrator.bdd.test.ts` percorrem o
+orquestrador e os handlers com repositórios em memória. Cobrem o caminho feliz, falha
+após pagamento com estorno, rejeição de orçamento e timeout. Os testes do consumer
+cobrem duplicatas e reprocessamento manual apos uma falha no handler (redrive da DLQ). Eles são determinísticos e
+não exigem Billing ou Workshop executando; o fluxo real entre serviços fica para a
+integração posterior.
 
-A parte que precisa ser **idêntica** nos quatro serviços, e que a
-[ADR 0016](../../docs/arch/adrs/0016-code-reuse-between-services.md) marca para virar
-pacote npm. Enquanto o pacote não existe, ela vive aqui.
-
-| Arquivo | Responsabilidade |
-| --- | --- |
-| `envelope.ts` | Schema Zod do envelope e enum de `reason`. Critério de aceite nº 1 do contrato |
-| `connection.ts` | Canal único por processo, topologia (exchange topic, fila, DLX, DLQ) e prefetch |
-| `publisher.ts` | Publica com o `eventType` como routing key e injeta o `traceparent` nos headers AMQP |
-| `consumer.ts` | Extrai o `traceparent`, aplica a guarda de idempotência e faz ack/nack |
-
-O contrato completo está em
-[docs/contracts/events-saga-contracts.md](../../docs/contracts/events-saga-contracts.md).
-
-### O que cada serviço precisa implementar
-
-O `consumer.ts` recebe uma `IdempotencyGuard` — o template não a implementa porque
-ela depende do banco de cada serviço. A regra é a mesma nos quatro: gravar em
-`processed_events` **na mesma transação** da escrita de negócio, e devolver `false`
-quando a mensagem já foi processada. Sem isso, um redelivery do RabbitMQ cobra o
-cliente duas vezes.
-
-No Postgres é chave primária composta `(event_id, consumer)`. No MongoDB do
-`bunzina-workshop` é índice único em `{ eventId, consumer }`.
-
-O `/ready` do `server.ts` também fica em aberto: cada serviço troca o
-`checkDependencies` pela checagem do seu próprio banco.
-
-## Checklist do repositório novo
-
-- [ ] Criar `Bunzina/<serviço>` e exigir PR na `main`
-- [ ] Checks obrigatórios: `lint-format/check`, `test/coverage` e o quality gate do Sonar
-- [ ] Secrets: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`,
-      `AWS_ACCOUNT_ID`, `DB_USER`, `DB_PASSWORD`, `RABBITMQ_URL`, `SONAR_TOKEN`
-- [ ] Projeto no SonarCloud com a key `Bunzina_<serviço>`
-- [ ] README com arquitetura, execução, link do Swagger e evidência de cobertura
+```bash
+bun run test:ci
+```
