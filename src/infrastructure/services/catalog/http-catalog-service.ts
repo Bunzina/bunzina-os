@@ -38,6 +38,26 @@ type CatalogFetcher = (
   init?: RequestInit,
 ) => Promise<Response>;
 
+interface CustomerApiResponse {
+  id: string;
+  name: string;
+  document: string;
+  documentKind: 'CPF' | 'CNPJ';
+  email: string;
+  phone: string;
+  address: {
+    street: string;
+    number: string;
+    city: string;
+    state: string;
+    zipCode: string;
+    neighborhood: string;
+    complement?: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
 export class HttpCatalogService implements CatalogService {
   private readonly baseUrl: string;
   private readonly apiKey?: string;
@@ -70,13 +90,13 @@ export class HttpCatalogService implements CatalogService {
   }
 
   async getCustomer(id: string): Promise<CustomerSnapshot> {
-    const data = await this.get<Record<string, unknown>>('customers', id);
+    const data = await this.get<CustomerApiResponse>('customers/id', id);
 
     return {
-      id: String(data.id ?? id),
-      name: String(data.name ?? ''),
-      document: String(data.document ?? ''),
-      email: data.email ? String(data.email) : undefined,
+      id: data.id,
+      name: data.name,
+      document: data.document,
+      email: data.email,
     };
   }
 

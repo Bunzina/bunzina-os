@@ -19,7 +19,20 @@ describe('http catalog service', () => {
               id: 'customer-id',
               name: 'Ana Souza',
               document: '12345678901',
+              documentKind: 'CPF',
               email: 'ana@example.com',
+              phone: '+5511999999999',
+              address: {
+                street: 'Rua das Flores',
+                number: '42',
+                city: 'São Paulo',
+                state: 'SP',
+                zipCode: '01310-100',
+                neighborhood: 'Centro',
+                complement: 'Apto 3',
+              },
+              createdAt: '2025-06-15',
+              updatedAt: '2025-06-16',
             })
           : response({
               id: 'vehicle-id',
@@ -41,7 +54,7 @@ describe('http catalog service', () => {
       model: 'Gol',
     });
     expect(requests).toEqual([
-      'http://catalog.test/customers/customer-id',
+      'http://catalog.test/customers/id/customer-id',
       'http://catalog.test/vehicles/vehicle-id',
     ]);
   });
