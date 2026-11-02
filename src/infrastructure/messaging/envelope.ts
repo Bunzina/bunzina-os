@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { context, propagation } from '@opentelemetry/api';
 
 export const envelopeSchema = z.object({
   eventId: z.uuid(),
@@ -43,16 +44,22 @@ export const buildEnvelope = <TData extends Record<string, unknown>>({
   correlationId,
   data,
   causationId,
-}: BuildInput<TData>): Envelope<TData> => ({
-  eventId: Bun.randomUUIDv7(),
-  eventType,
-  eventVersion: 1,
-  occurredAt: new Date().toISOString(),
-  correlationId,
-  ...(causationId ? { causationId } : {}),
-  producer: process.env.OTEL_SERVICE_NAME || 'bunzina-os',
-  data,
-});
+}: BuildInput<TData>): Envelope<TData> => {
+  const headers: Record<string, string> = {};
+  propagation.inject(context.active(), headers);
+
+  return {
+    eventId: Bun.randomUUIDv7(),
+    eventType,
+    eventVersion: 1,
+    occurredAt: new Date().toISOString(),
+    correlationId,
+    ...(causationId ? { causationId } : {}),
+    producer: process.env.OTEL_SERVICE_NAME || 'bunzina-os',
+    ...(headers.traceparent ? { traceparent: headers.traceparent } : {}),
+    data,
+  };
+};
 
 export const parseEnvelope = (raw: unknown): Envelope =>
   envelopeSchema.parse(raw) as Envelope;

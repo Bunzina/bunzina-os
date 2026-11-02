@@ -51,9 +51,18 @@ app.use(
       info: {
         title: 'bunzina-os API',
         version: '1.0.0',
-        description: 'Microsserviço do Bunzina — Fase 4.',
+        description:
+          'Owns service orders and coordinates diagnosis, quote, payment, and execution workflows.',
       },
       tags: [
+        {
+          name: 'Service Orders',
+          description: 'Criação, consulta e listagem de ordens de serviço.',
+        },
+        {
+          name: 'Observability',
+          description: 'Métricas Prometheus do serviço.',
+        },
         { name: 'Health', description: 'Verificação de saúde do serviço' },
       ],
     },
@@ -63,27 +72,51 @@ app.use(
 );
 
 app.get('/health', () => Response.json({ status: 'ok' }), {
-  detail: { tags: ['Health'] },
+  detail: {
+    tags: ['Health'],
+    summary: 'Health check',
+    description: 'Confirma que o processo HTTP está respondendo.',
+  },
 });
 
-app.get('/metrics', async () => {
-  return new Response(await getMetrics(), {
-    status: 200,
-    headers: { 'Content-Type': metricsContentType },
-  });
-});
+app.get(
+  '/metrics',
+  async () => {
+    return new Response(await getMetrics(), {
+      status: 200,
+      headers: { 'Content-Type': metricsContentType },
+    });
+  },
+  {
+    detail: {
+      tags: ['Observability'],
+      summary: 'Prometheus metrics',
+      description: 'Expõe métricas HTTP, RabbitMQ, outbox e saga.',
+    },
+  },
+);
 
-app.get('/ready', async ({ set }) => {
-  try {
-    await checkDependencies();
+app.get(
+  '/ready',
+  async ({ set }) => {
+    try {
+      await checkDependencies();
 
-    return Response.json({ status: 'ready' });
-  } catch {
-    set.status = 503;
+      return Response.json({ status: 'ready' });
+    } catch {
+      set.status = 503;
 
-    return Response.json({ status: 'not_ready' }, { status: 503 });
-  }
-});
+      return Response.json({ status: 'not_ready' }, { status: 503 });
+    }
+  },
+  {
+    detail: {
+      tags: ['Health'],
+      summary: 'Readiness check',
+      description: 'Confirma que o serviço consegue consultar o PostgreSQL.',
+    },
+  },
+);
 
 async function checkDependencies(): Promise<void> {
   await db`SELECT 1`;

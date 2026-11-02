@@ -11,39 +11,50 @@ export const publish = async <TData extends Record<string, unknown>>(
   channelOverride?: Channel,
 ): Promise<void> => {
   const channel = channelOverride ?? (await getChannel());
+  const parentContext = envelope.traceparent
+    ? propagation.extract(context.active(), {
+        traceparent: envelope.traceparent,
+      })
+    : context.active();
 
-  await tracer.startActiveSpan(
-    `publish ${envelope.eventType}`,
-    { kind: SpanKind.PRODUCER },
-    async (span) => {
-      try {
-        const headers: Record<string, string> = {};
-        propagation.inject(context.active(), headers);
+  await context.with(parentContext, () =>
+    tracer.startActiveSpan(
+      `publish ${envelope.eventType}`,
+      { kind: SpanKind.PRODUCER },
+      async (span) => {
+        try {
+          const headers: Record<string, string> = {};
+          propagation.inject(context.active(), headers);
 
-        const payload = { ...envelope, traceparent: headers.traceparent };
+          const traceparent = headers.traceparent ?? envelope.traceparent;
+          const payload = {
+            ...envelope,
+            ...(traceparent ? { traceparent } : {}),
+          };
 
-        channel.publish(
-          EXCHANGE,
-          envelope.eventType,
-          Buffer.from(JSON.stringify(payload)),
-          {
-            persistent: true,
-            messageId: envelope.eventId,
-            correlationId: envelope.correlationId,
-            type: envelope.eventType,
-            contentType: 'application/json',
-            headers,
-          },
-        );
+          channel.publish(
+            EXCHANGE,
+            envelope.eventType,
+            Buffer.from(JSON.stringify(payload)),
+            {
+              persistent: true,
+              messageId: envelope.eventId,
+              correlationId: envelope.correlationId,
+              type: envelope.eventType,
+              contentType: 'application/json',
+              headers: traceparent ? { ...headers, traceparent } : headers,
+            },
+          );
 
-        if ('waitForConfirms' in channel) {
-          await channel.waitForConfirms();
+          if ('waitForConfirms' in channel) {
+            await channel.waitForConfirms();
+          }
+
+          messagesPublishedTotal.inc({ event_type: envelope.eventType });
+        } finally {
+          span.end();
         }
-
-        messagesPublishedTotal.inc({ event_type: envelope.eventType });
-      } finally {
-        span.end();
-      }
-    },
+      },
+    ),
   );
 };

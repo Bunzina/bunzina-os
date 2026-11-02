@@ -11,6 +11,7 @@ import { db } from '@/infrastructure/configs/database';
 import { ServiceOrderRepository } from '@/infrastructure/repositories/service-order/service-order-repository';
 import { SagaInstanceRepository } from '@/infrastructure/repositories/saga/saga-instance-repository';
 import { OutboxRepository } from '@/infrastructure/repositories/outbox/outbox-repository';
+import { sagaObservability } from '@/infrastructure/observability/metrics';
 import {
   CatalogServiceError,
   HttpCatalogService,
@@ -72,6 +73,7 @@ const dependencies = () => {
     sagaRepository,
     repository,
     (command) => commandPublisher.publish(command),
+    { observability: sagaObservability },
   );
 
   return {
@@ -103,6 +105,8 @@ export const registerServiceOrderRoutes = (app: Elysia) => {
       detail: {
         tags: ['Service Orders'],
         summary: 'Create service order',
+        description:
+          'Cria a ordem de serviço e inicia a saga publicando o comando de diagnóstico na outbox.',
       },
     },
   );
@@ -127,6 +131,7 @@ export const registerServiceOrderRoutes = (app: Elysia) => {
       detail: {
         tags: ['Service Orders'],
         summary: 'Find service order by id',
+        description: 'Retorna uma ordem de serviço pelo identificador.',
       },
     },
   );
@@ -145,6 +150,8 @@ export const registerServiceOrderRoutes = (app: Elysia) => {
       detail: {
         tags: ['Service Orders'],
         summary: 'List service orders',
+        description:
+          'Lista ordens de serviço com paginação e filtros por cliente, veículo, status e data.',
       },
     },
   );

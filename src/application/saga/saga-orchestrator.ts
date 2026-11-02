@@ -1,5 +1,16 @@
 import { z } from 'zod';
-import type { Envelope } from '@/infrastructure/messaging/envelope';
+import {
+  failureReasonSchema,
+  type Envelope,
+} from '@/infrastructure/messaging/envelope';
+import {
+  noOpSagaObservability,
+  type SagaObservability,
+} from '@/application/ports/saga-observability';
+import {
+  determineStatusTransition,
+  StatusDirection,
+} from '@/domain/service-order/state-machines/status-machine';
 import {
   buildAbortExecutionCommand,
   buildChargeCommand,
@@ -28,6 +39,11 @@ export type SagaTimeouts = {
   quoteMs: number;
   paymentMs: number;
   executionMs: number;
+};
+
+export type SagaOrchestratorOptions = {
+  timeouts?: SagaTimeouts;
+  observability?: SagaObservability;
 };
 
 const defaultTimeouts: SagaTimeouts = {
@@ -92,7 +108,7 @@ const executionCompletedSchema = z.object({
 
 const failureSchema = z.object({
   serviceOrderId: z.uuid(),
-  reason: z.string().min(1),
+  reason: failureReasonSchema,
   detail: z.string().default(''),
 });
 
@@ -117,13 +133,27 @@ const paymentRefundedSchema = z.object({
   paymentId: z.uuid(),
 });
 
+const quoteRejectedSchema = z.object({
+  serviceOrderId: z.uuid(),
+  quoteId: z.uuid(),
+  reason: failureReasonSchema,
+  detail: z.string(),
+  rejectedBy: z.string().min(1),
+});
+
 export class SagaOrchestrator {
+  private readonly timeouts: SagaTimeouts;
+  private readonly observability: SagaObservability;
+
   constructor(
     private readonly sagaRepository: SagaInstanceRepository,
     private readonly serviceOrderRepository: ServiceOrderRepository,
     private readonly publishCommand: SagaCommandPublisher,
-    private readonly timeouts: SagaTimeouts = defaultTimeouts,
-  ) {}
+    options: SagaOrchestratorOptions = {},
+  ) {
+    this.timeouts = options.timeouts ?? defaultTimeouts;
+    this.observability = options.observability ?? noOpSagaObservability;
+  }
 
   async start(
     order: ServiceOrder,
@@ -141,6 +171,7 @@ export class SagaOrchestrator {
     );
 
     await this.sagaRepository.create(saga);
+    this.observability.recordState(saga);
     await this.serviceOrderRepository.update(inDiagnostic);
     await this.publishCommand(
       buildStartDiagnosticCommand(inDiagnostic, causationId),
@@ -191,6 +222,9 @@ export class SagaOrchestrator {
       case 'evt.billing.payment-refunded':
         await this.handlePaymentRefunded(envelope, saga);
         return;
+      case 'evt.billing.quote-rejected':
+        await this.handleQuoteRejected(envelope, saga);
+        return;
       default:
         throw new Error(`Unsupported saga event: ${envelope.eventType}`);
     }
@@ -211,7 +245,7 @@ export class SagaOrchestrator {
     saga.completeStep(SagaStep.DIAGNOSTIC, SagaStep.QUOTE);
     saga.setStepDeadline(new Date(Date.now() + this.timeouts.quoteMs));
     await this.serviceOrderRepository.update(awaitingApproval);
-    await this.sagaRepository.update(saga);
+    await this.saveSaga(saga);
     await this.publishCommand(
       buildIssueQuoteCommand(awaitingApproval, envelope.eventId),
     );
@@ -235,7 +269,7 @@ export class SagaOrchestrator {
     saga.setQuote(data.quoteId);
     saga.setStepDeadline(new Date(Date.now() + this.timeouts.quoteMs));
     await this.serviceOrderRepository.update(updatedOrder);
-    await this.sagaRepository.update(saga);
+    await this.saveSaga(saga);
   }
 
   private async handleQuoteApproved(
@@ -256,7 +290,7 @@ export class SagaOrchestrator {
     });
 
     await this.serviceOrderRepository.update(awaitingPayment);
-    await this.sagaRepository.update(saga);
+    await this.saveSaga(saga);
     await this.publishCommand(
       buildChargeCommand({
         order: awaitingPayment,
@@ -285,7 +319,7 @@ export class SagaOrchestrator {
     });
 
     await this.serviceOrderRepository.update(inExecution);
-    await this.sagaRepository.update(saga);
+    await this.saveSaga(saga);
     await this.publishCommand(
       buildStartExecutionCommand(inExecution, envelope.eventId),
     );
@@ -324,13 +358,16 @@ export class SagaOrchestrator {
     saga.complete();
     saga.clearStepDeadline();
     await this.serviceOrderRepository.update(completedOrder);
-    await this.sagaRepository.update(saga);
+    await this.saveSaga(saga);
+    this.observability.recordOutcome(saga, 'completed');
   }
 
   async handleTimeout(saga: SagaInstance): Promise<void> {
+    this.observability.recordTimeout(saga.currentStep);
     saga.startCompensation('TIMEOUT');
+    this.observability.recordCompensation('TIMEOUT');
     saga.clearStepDeadline();
-    await this.sagaRepository.update(saga);
+    await this.saveSaga(saga);
 
     if (saga.currentStep === SagaStep.EXECUTION && saga.paymentId) {
       await this.publishCommand(
@@ -370,8 +407,9 @@ export class SagaOrchestrator {
   ): Promise<void> {
     const data = failureSchema.parse(envelope.data);
     saga.startCompensation(data.reason);
+    this.observability.recordCompensation(data.reason);
     saga.clearStepDeadline();
-    await this.sagaRepository.update(saga);
+    await this.saveSaga(saga);
     await this.publishCommand(
       buildAbortExecutionCommand({
         serviceOrderId: saga.serviceOrderId,
@@ -389,8 +427,9 @@ export class SagaOrchestrator {
     const data = paymentFailedSchema.parse(envelope.data);
     saga.setQuote(data.quoteId);
     saga.startCompensation(data.reason);
+    this.observability.recordCompensation(data.reason);
     saga.clearStepDeadline();
-    await this.sagaRepository.update(saga);
+    await this.saveSaga(saga);
     await this.publishCommand(
       buildCancelQuoteCommand({
         serviceOrderId: saga.serviceOrderId,
@@ -408,8 +447,9 @@ export class SagaOrchestrator {
   ): Promise<void> {
     const data = executionFailedSchema.parse(envelope.data);
     saga.startCompensation(data.reason);
+    this.observability.recordCompensation(data.reason);
     saga.clearStepDeadline();
-    await this.sagaRepository.update(saga);
+    await this.saveSaga(saga);
     await this.publishCommand(
       buildAbortExecutionCommand({
         serviceOrderId: saga.serviceOrderId,
@@ -459,6 +499,33 @@ export class SagaOrchestrator {
     await this.finishCompensation(saga);
   }
 
+  private async handleQuoteRejected(
+    envelope: Envelope,
+    saga: SagaInstance,
+  ): Promise<void> {
+    const data = quoteRejectedSchema.parse(envelope.data);
+    const order = await this.requireOrder(saga.serviceOrderId);
+    const receivedStatus = determineStatusTransition(
+      order.status,
+      StatusDirection.BACK,
+    );
+
+    if (!receivedStatus) {
+      throw new Error(
+        `Service order cannot return to RECEIVED from ${order.status}`,
+      );
+    }
+
+    saga.setQuote(data.quoteId);
+    saga.complete();
+    saga.clearStepDeadline();
+    await this.serviceOrderRepository.update(
+      this.withOrderStatus(order, receivedStatus),
+    );
+    await this.saveSaga(saga);
+    this.observability.recordOutcome(saga, 'rejected');
+  }
+
   private async finishCompensation(saga: SagaInstance): Promise<void> {
     const order = await this.requireOrder(saga.serviceOrderId);
     const canceledOrder = this.withOrderStatus(
@@ -468,7 +535,13 @@ export class SagaOrchestrator {
     saga.fail(saga.lastError ?? 'COMPENSATED');
     saga.clearStepDeadline();
     await this.serviceOrderRepository.update(canceledOrder);
+    await this.saveSaga(saga);
+    this.observability.recordOutcome(saga, 'compensated');
+  }
+
+  private async saveSaga(saga: SagaInstance): Promise<void> {
     await this.sagaRepository.update(saga);
+    this.observability.recordState(saga);
   }
 
   private async requireOrder(serviceOrderId: string): Promise<ServiceOrder> {

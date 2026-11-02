@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'bun:test';
-import { createHttpMetrics, getMetrics, normalizeRoute } from './metrics';
+import {
+  createHttpMetrics,
+  getMetrics,
+  normalizeRoute,
+  sagaObservability,
+} from './metrics';
+import { SagaInstance } from '@/domain/saga/entities/saga-instance';
+import { SagaStatus } from '@/domain/saga/types/saga-status';
+import { SagaStep } from '@/domain/saga/types/saga-step';
 
 describe('normalizeRoute', () => {
   it('keeps a static path as it is', () => {
@@ -42,6 +50,29 @@ describe('createHttpMetrics', () => {
     metrics.finish(request, 500);
 
     expect(await getMetrics()).toContain('status_code="500"');
+  });
+});
+
+describe('saga observability metrics', () => {
+  it('records state, compensation, timeout and terminal duration metrics', async () => {
+    const saga = new SagaInstance({
+      serviceOrderId: crypto.randomUUID(),
+      status: SagaStatus.RUNNING,
+      currentStep: SagaStep.DIAGNOSTIC,
+    });
+
+    sagaObservability.recordState(saga);
+    sagaObservability.recordCompensation('TIMEOUT');
+    sagaObservability.recordTimeout(SagaStep.EXECUTION);
+    sagaObservability.recordOutcome(saga, 'compensated');
+
+    const exposed = await getMetrics();
+
+    expect(exposed).toContain('bunzina_os_saga_states_total');
+    expect(exposed).toContain('bunzina_os_saga_compensations_total');
+    expect(exposed).toContain('bunzina_os_saga_timeouts_total');
+    expect(exposed).toContain('bunzina_os_saga_duration_seconds');
+    expect(exposed).toContain('bunzina_os_saga_outcomes_total');
   });
 });
 

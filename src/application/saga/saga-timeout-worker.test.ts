@@ -7,6 +7,35 @@ import type { SagaOrchestrator } from './saga-orchestrator';
 import { SagaTimeoutWorker } from './saga-timeout-worker';
 
 describe('saga timeout worker', () => {
+  test('should poll expired sagas from its interval callback', () => {
+    const originalSetInterval = globalThis.setInterval;
+    let poll: (() => void) | undefined;
+    let repositoryCalls = 0;
+    const timer = originalSetInterval(() => {}, 60_000);
+
+    globalThis.setInterval = ((callback: Parameters<typeof setInterval>[0]) => {
+      poll = callback as () => void;
+      return timer;
+    }) as typeof setInterval;
+
+    const repository = {
+      findExpired: async () => {
+        repositoryCalls += 1;
+        return [];
+      },
+    } as unknown as SagaInstanceRepository;
+    const worker = new SagaTimeoutWorker(repository, {} as SagaOrchestrator);
+
+    try {
+      expect(worker.start(60_000)).toBe(timer);
+      poll?.();
+      expect(repositoryCalls).toBe(1);
+    } finally {
+      globalThis.setInterval = originalSetInterval;
+      clearInterval(timer);
+    }
+  });
+
   test('should compensate every expired saga once', async () => {
     const saga = new SagaInstance({
       serviceOrderId: '11111111-1111-4111-8111-111111111111',
