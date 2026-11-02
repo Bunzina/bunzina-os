@@ -1,10 +1,14 @@
 import { describe, expect, it, mock } from 'bun:test';
 import { propagation } from '@opentelemetry/api';
 import { W3CTraceContextPropagator } from '@opentelemetry/core';
+import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import type { Channel } from 'amqplib';
 import { buildEnvelope } from './envelope';
 import { publish } from './publisher';
 
+new NodeTracerProvider().register({
+  propagator: new W3CTraceContextPropagator(),
+});
 propagation.setGlobalPropagator(new W3CTraceContextPropagator());
 
 const fakeChannel = () => {
