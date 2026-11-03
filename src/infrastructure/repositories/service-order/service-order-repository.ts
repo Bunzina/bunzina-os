@@ -18,7 +18,10 @@ import {
 } from './mappers/service-order-mapper';
 
 export class ServiceOrderRepository implements ServiceOrderRepositoryPort {
-  constructor(private readonly client: SQL) {}
+  constructor(
+    private readonly client: SQL,
+    private readonly useExistingTransaction = false,
+  ) {}
 
   async create(order: ServiceOrder): Promise<ServiceOrder> {
     const record = ServiceOrderMapper.toDatabase(order);
@@ -29,7 +32,7 @@ export class ServiceOrderRepository implements ServiceOrderRepositoryPort {
       ServiceOrderAutoPartItemMapper.toDatabase(order.id!, item),
     );
 
-    await this.client.transaction(async (sql) => {
+    await this.runTransaction(async (sql) => {
       await sql`INSERT INTO bunzina.service_orders ${sql(record)}`;
       await this.insertItems(sql, serviceItems, autoPartItems);
     });
@@ -113,7 +116,7 @@ export class ServiceOrderRepository implements ServiceOrderRepositoryPort {
       ServiceOrderAutoPartItemMapper.toDatabase(order.id!, item),
     );
 
-    await this.client.transaction(async (sql) => {
+    await this.runTransaction(async (sql) => {
       await sql`
         UPDATE bunzina.service_orders
         SET customer_id = ${record.customer_id},
@@ -148,6 +151,11 @@ export class ServiceOrderRepository implements ServiceOrderRepositoryPort {
     });
 
     return order;
+  }
+
+  private runTransaction<T>(operation: (sql: SQL) => Promise<T>): Promise<T> {
+    if (this.useExistingTransaction) return operation(this.client);
+    return this.client.transaction(operation);
   }
 
   async delete(id: string): Promise<void> {

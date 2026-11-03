@@ -1,73 +1,121 @@
-# Testar o `bunzina-os` localmente
+# Testar a criação de OS com o Workshop
 
-Pré-requisitos: Bun 1.4.4 e Docker Desktop em execução.
+Este fluxo usa os containers locais de Cadastros, `bunzina-os` e Workshop. As portas
+ficam em `3000` (Cadastros), `3001` (OS) e `3002` (Workshop). O RabbitMQ compartilhado
+é o do `bunzina-os`; o MongoDB local pertence ao Workshop. Não precisa do Atlas nem do
+Billing.
 
-## 1. Rodar a suíte local
+## 1. Subir Cadastros
 
-No terminal, dentro da pasta `bunzina-os`:
+No PowerShell, no diretório `bunzina`:
 
-```bash
-bun install
-bun test
+```powershell
+docker compose up --build -d
 ```
 
-Para rodar também com o limite de cobertura usado no CI:
+## 2. Subir a OS e o RabbitMQ compartilhado
 
-```bash
-bun run test:ci
-```
+No diretório `bunzina-os`:
 
-Os cenários da Saga usam repositórios em memória e simulam eventos de Billing e
-Workshop; não é preciso subir esses serviços.
-
-## 2. Subir a API e suas dependências
-
-Em outro terminal, dentro de `bunzina-os`:
-
-```bash
+```powershell
 docker compose up --build -d db rabbitmq
 docker compose run --build --rm app bun run migration
-docker compose up --build app
+docker compose up --build -d app
 ```
 
-Confira no navegador:
+## 3. Subir o Workshop
 
-- API: <http://localhost:3000/health>
-- Banco pronto: <http://localhost:3000/ready>
-- Swagger: <http://localhost:3000/swagger>
+No diretório `bunzina-workshop`:
 
-Para encerrar, pressione `Ctrl+C` e rode `docker compose down`.
+```powershell
+docker compose --env-file compose.integration.env run --build --rm app bun run ensure-indexes
+docker compose --env-file compose.integration.env up --build -d mongo rabbitmq app
+```
 
-## Primeiro fluxo integrado: OS → Workshop
+O arquivo `compose.integration.env` conecta o Workshop ao RabbitMQ do `bunzina-os`. O RabbitMQ
+próprio do Workshop fica em `5673` e não é usado nesse fluxo.
 
-O objetivo é criar uma OS pela API e confirmar que o Workshop recebeu o comando
-`cmd.workshop.start-diagnostic`. Billing ainda não participa deste primeiro teste.
+Confirme que as APIs estão prontas:
 
-Para isso, os dois serviços precisam usar o mesmo RabbitMQ. A configuração padrão de
-cada `docker-compose.yml` sobe um broker separado; o Workshop deve apontar para o broker
-do `bunzina-os`. O Workshop também precisa de MongoDB. Para este teste local, use o
-MongoDB do Docker Compose do Workshop; o link do Atlas não é necessário. O `MONGODB_URI`
-é configuração do `bunzina-workshop`; o `bunzina-os` usa PostgreSQL.
+```powershell
+curl.exe http://localhost:3000/health
+curl.exe http://localhost:3001/health
+curl.exe http://localhost:3002/health
+```
 
-No Cadastros (`bunzina`), crie ou reutilize:
+## 4. Criar os dados de teste
 
-1. Um cliente.
-2. Um veículo vinculado ao cliente.
-3. Um serviço ativo para incluir na OS.
+Cadastros usa a chave local `local-dev-catalog-key`. Os endpoints abaixo retornam o
+objeto criado diretamente; copie o `id` de cada resposta para o próximo comando. Se já
+tiver cliente, veículo e serviço, pode reutilizar os IDs.
 
-Não é necessário criar um usuário para a OS. As rotas protegidas do Cadastros podem ser
-acessadas com o `Api-Key` de serviço configurado no Cadastros. Use a mesma chave em
-`CATALOG_SERVICE_API_KEY` no OS.
+```powershell
+curl.exe -X POST http://localhost:3000/customers `
+  -H "Api-Key: local-dev-catalog-key" `
+  -H "Content-Type: application/json" `
+  --data-raw '{"name":"Ana Souza","document":"52998224725","email":"ana.local@example.com","phone":"+5511999999999","address":{"street":"Rua das Flores","number":"42","city":"São Paulo","state":"SP","zipCode":"01310-100","neighborhood":"Centro"}}'
+```
 
-Use os IDs retornados para enviar `POST /service-orders` ao OS com `customerId`,
-`vehicleId` e pelo menos um item em `serviceItems` (com `serviceId` e `price`). A
-confirmação esperada é um registro da OS no Mongo do Workshop, em `execution_queue`, com
-o mesmo `serviceOrderId` e status `IN_DIAGNOSTIC`.
+```powershell
+curl.exe -X POST http://localhost:3000/vehicles `
+  -H "Api-Key: local-dev-catalog-key" `
+  -H "Content-Type: application/json" `
+  --data-raw '{"customerId":"<CUSTOMER_ID>","licensePlate":"ABC1D23","model":"Gol","brand":"Volkswagen","year":2022}'
+```
 
-O cliente REST do OS busca o cliente por UUID em `GET /customers/id/{customerId}`.
-Essa rota foi adicionada ao Cadastros para manter a busca existente por documento sem
-alterar seu contrato. O fluxo integrado ainda precisa ser executado localmente para
-confirmar o consumo do comando pelo Workshop.
+```powershell
+curl.exe -X POST http://localhost:3000/services `
+  -H "Api-Key: local-dev-catalog-key" `
+  -H "Content-Type: application/json" `
+  --data-raw '{"name":"Revisão básica","description":"Revisão para teste local","price":150,"durationInMinutes":60}'
+```
 
-Depois que Billing estiver pronto, o teste poderá continuar pelo orçamento, pagamento,
-execução e pelos cenários de compensação.
+Troque `<CUSTOMER_ID>` pelo ID do cliente retornado. Copie também os IDs de veículo e
+serviço para o próximo comando.
+
+## 5. Criar a OS
+
+```powershell
+curl.exe -X POST http://localhost:3001/service-orders `
+  -H "Content-Type: application/json" `
+  --data-raw '{"customerId":"<CUSTOMER_ID>","vehicleId":"<VEHICLE_ID>","serviceItems":[{"serviceId":"<SERVICE_ID>","price":150,"description":"Revisão básica"}]}'
+```
+
+Substitua os três IDs pelos valores retornados por Cadastros. A criação deve retornar
+`201` e um `id` para a OS. Para confirmar o recebimento pelo Workshop, consulte o Mongo:
+
+```powershell
+$osId = "<OS_ID>"
+docker compose --env-file compose.integration.env exec -e "OS_ID=$osId" mongo mongosh -u bun -p bun --authenticationDatabase admin bunzina-workshop --eval 'db.execution_queue.findOne({serviceOrderId: process.env.OS_ID})'
+```
+
+O documento deve aparecer com status `IN_DIAGNOSTIC`. `<OS_ID>` é o ID retornado pela OS.
+
+## 6. Concluir o diagnóstico e verificar o retorno à OS
+
+Use uma OS nova e faça este passo antes do timeout de cinco minutos. A OS que já está
+`ABORTED` não pode avançar. Reutilize `$osId` definido no passo anterior.
+
+Envie o diagnóstico ao Workshop. Use o ID do serviço retornado por Cadastros e o preço
+em centavos:
+
+```powershell
+curl.exe -X PATCH "http://localhost:3002/diagnostics/$osId" `
+  -H "Content-Type: application/json" `
+  --data-raw '{"diagnosedItems":{"services":[{"serviceId":"<SERVICE_ID>","description":"Revisão básica","priceCents":15000}],"autoParts":[]},"diagnosedBy":"Mecânico de teste","notes":"Diagnóstico concluído"}'
+```
+
+A resposta do Workshop deve indicar que o diagnóstico foi concluído. Em seguida, consulte
+a OS:
+
+```powershell
+curl.exe "http://localhost:3001/service-orders/$osId"
+```
+
+Ela deve avançar para `AWAITING_APPROVAL` e publicar o pedido de cotação. O fluxo para
+nesse ponto porque o Billing ainda não está integrado.
+
+## Encerrar
+
+Em cada projeto, rode `docker compose down`. No Workshop, use o mesmo argumento
+`--env-file compose.integration.env`.
