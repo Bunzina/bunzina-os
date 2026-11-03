@@ -16,12 +16,14 @@ const state: {
   processedEvents: Set<string>;
   commands: Envelope[];
   transactionReferences: unknown[];
+  serviceOrderRepositoryUsesExistingTransaction: boolean[];
 } = {
   saga: null,
   order: null,
   processedEvents: new Set(),
   commands: [],
   transactionReferences: [],
+  serviceOrderRepositoryUsesExistingTransaction: [],
 };
 
 const snapshotState = () => ({
@@ -93,8 +95,11 @@ mock.module(
   '@/infrastructure/repositories/service-order/service-order-repository',
   () => ({
     ServiceOrderRepository: class {
-      constructor(transaction: unknown) {
+      constructor(transaction: unknown, useExistingTransaction: boolean) {
         recordTransaction(transaction);
+        state.serviceOrderRepositoryUsesExistingTransaction.push(
+          useExistingTransaction,
+        );
       }
 
       async findById() {
@@ -143,6 +148,7 @@ const resetState = (saga?: SagaInstance) => {
   state.processedEvents = new Set();
   state.commands = [];
   state.transactionReferences = [];
+  state.serviceOrderRepositoryUsesExistingTransaction = [];
 };
 
 const assertSingleTransaction = () => {
@@ -183,6 +189,7 @@ describe('PostgresSagaEventProcessor', () => {
     expect(state.processedEvents.has(envelope.eventId)).toBe(true);
     expect(state.order?.status).toBe(ServiceOrderStatus.AWAITING_APPROVAL);
     expect(state.commands[0]?.eventType).toBe('cmd.billing.issue-quote');
+    expect(state.serviceOrderRepositoryUsesExistingTransaction).toEqual([true]);
     assertSingleTransaction();
   });
 

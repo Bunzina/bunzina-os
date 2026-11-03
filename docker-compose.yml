@@ -4,13 +4,15 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - '3000:3000'
+      - '3001:3000'
     volumes:
       - ./:/app
       - /app/.bun
     environment:
       - APP_ENV=dev
       - DATABASE_URL=postgres://bun:bun@db:5432/bunzina-os
+      - CATALOG_SERVICE_URL=http://host.docker.internal:3000
+      - CATALOG_SERVICE_API_KEY=local-dev-catalog-key
       - RABBITMQ_URL=amqp://bunzina:bunzina@rabbitmq:5672
       - RABBITMQ_EXCHANGE=bunzina.events
       - RABBITMQ_QUEUE=bunzina-os.inbox
@@ -29,7 +31,7 @@ services:
       POSTGRES_USER: bun
       POSTGRES_PASSWORD: bun
     ports:
-      - '5432:5432'
+      - '5434:5432'
     volumes:
       - db-data:/var/lib/postgresql/data
     healthcheck:

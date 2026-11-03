@@ -106,7 +106,10 @@ export class PostgresSagaEventProcessor implements MessageProcessor<Envelope> {
     observations: SagaObservability,
   ): SagaOrchestrator {
     const sagaRepository = new SagaInstanceRepository(transaction);
-    const serviceOrderRepository = new ServiceOrderRepository(transaction);
+    const serviceOrderRepository = new ServiceOrderRepository(
+      transaction,
+      true,
+    );
     const outboxRepository = new OutboxRepository(transaction);
     const commandPublisher = new OutboxCommandPublisher(outboxRepository);
 
