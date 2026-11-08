@@ -75,12 +75,17 @@ RabbitMQ e outbox.
 
 ## Testes da Saga
 
-Os cenários BDD em `src/application/saga/saga-orchestrator.bdd.test.ts` percorrem o
-orquestrador e os handlers com repositórios em memória. Cobrem o caminho feliz, falha
-após pagamento com estorno, rejeição de orçamento e timeout. Os testes do consumer
-cobrem duplicatas e reprocessamento manual apos uma falha no handler (redrive da DLQ). Eles são determinísticos e
-não exigem Billing ou Workshop executando; o fluxo real entre serviços fica para a
-integração posterior.
+Os cenários Gherkin em `features/` percorrem o ciclo da ordem, seus desfechos e as
+compensações. Eles exercitam os casos de uso e o orquestrador com dependências
+controladas em memória, sem exigir Billing ou Workshop executando.
+
+```bash
+bun run bdd
+```
+
+Os testes de unidade em `src/application/saga/saga-orchestrator.bdd.test.ts` e os
+testes do consumer continuam cobrindo detalhes como duplicatas e redrive da DLQ. A
+integração real entre serviços fica para uma etapa posterior.
 
 ```bash
 bun run test:ci
