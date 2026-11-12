@@ -52,7 +52,9 @@ jobs:
         run: bun install
 
       - name: Run tests with coverage
-        run: bun test --config=./bunfig.ci.toml
+        run: |
+          bun test --config=./bunfig.ci.toml
+          bun run bdd
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
