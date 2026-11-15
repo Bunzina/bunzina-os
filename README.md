@@ -16,8 +16,40 @@ PostgreSQL e publica comandos por uma outbox no RabbitMQ.
 Billing é dono de orçamentos e pagamentos. Workshop é dono de diagnóstico e execução.
 O `bunzina-os` integra esses serviços pelos contratos de eventos; ele não acessa os
 bancos deles. O contrato compartilhado está em
-[events-saga-contracts.md](https://github.com/Bunzina/bunzina/blob/main/docs/contracts/events-saga-contracts.md)
-e a decisão arquitetural está no [RFC da Saga](docs/rfc-saga-orchestration-implementation.md).
+[events-saga-contracts.md](https://github.com/Bunzina/bunzina/blob/main/docs/contracts/events-saga-contracts.md).
+Swagger: `GET /swagger`.
+
+## Por que saga orquestrada
+
+O ciclo da OS atravessa três serviços e não cabe mais numa transação PostgreSQL. O PDF
+pede Saga Pattern e cobra esta justificativa neste README.
+
+Escolhemos **saga orquestrada**, com este serviço no comando
+([ADR 0013](https://github.com/Bunzina/bunzina/blob/main/docs/arch/adrs/0013-orchestrated-saga.md)):
+
+- O estado de cada instância fica em `saga_instances` (`service_order_id` = PK e
+  `correlationId` de todas as mensagens). Na demonstração dá para apontar para uma
+  linha `COMPENSATING` em vez de correlacionar logs de três serviços.
+- A tabela guarda os **passos concluídos**, não só o passo atual: a compensação
+  depende de até onde a saga chegou.
+- Só o orquestrador publica comandos (`cmd.*`). Billing e Workshop só publicam
+  eventos (`evt.*`). Isso impede coreografia disfarçada de evento que na verdade é
+  ordem.
+- Todo passo tem prazo em `step_deadline_at`. Prazo vencido dispara a mesma
+  compensação de uma falha explícita (`reason: TIMEOUT`).
+- Recusa de orçamento é desfecho de negócio, não falha: a OS volta para `RECEIVED`
+  sem compensar.
+
+**Por que não coreografia.** Menos acoplamento, mas o estado do fluxo fica implícito
+na soma dos três serviços. Depurar uma compensação exigiria cruzar logs; o vídeo da
+banca não tem tempo para isso. A máquina de estados em
+`src/domain/service-order/state-machines/status-machine.ts` já existia e virou o
+modelo da saga sem reescrita.
+
+Diagramas de caminho feliz e compensação: [docs/saga-orchestration.md](docs/saga-orchestration.md).
+RFC de implementação: [docs/rfc-saga-orchestration-implementation.md](docs/rfc-saga-orchestration-implementation.md).
+Diagrama geral dos quatro serviços e bancos:
+[microservices.md](https://github.com/Bunzina/bunzina/blob/main/docs/arch/diagrams/microservices.md).
 
 ## Fluxos
 
