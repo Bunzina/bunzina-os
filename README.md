@@ -48,8 +48,8 @@ modelo da saga sem reescrita.
 
 Diagramas de caminho feliz e compensação: [docs/saga-orchestration.md](docs/saga-orchestration.md).
 RFC de implementação: [docs/rfc-saga-orchestration-implementation.md](docs/rfc-saga-orchestration-implementation.md).
-Diagrama geral dos quatro serviços e bancos:
-[microservices.md](https://github.com/Bunzina/bunzina/blob/main/docs/arch/diagrams/microservices.md).
+Arquitetura geral (quatro serviços, bancos, broker): [docs/architecture.md](docs/architecture.md).
+Banco deste serviço e mapa dos outros: [docs/database.md](docs/database.md).
 
 ## Fluxos
 
