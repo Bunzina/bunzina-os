@@ -1,0 +1,25 @@
+meta {
+  name: Entregar ordem
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{osBaseUrl}}/service-orders/{{serviceOrderId}}/status
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "direction": "next"
+  }
+}
+
+docs {
+  So aceita COMPLETED → DELIVERED. Rode depois da execucao no workshop.
+}

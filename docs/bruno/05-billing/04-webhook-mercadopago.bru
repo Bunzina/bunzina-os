@@ -1,0 +1,41 @@
+meta {
+  name: Webhook Mercado Pago
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{billingBaseUrl}}/webhooks/mercadopago?data_id={{merchantOrderId}}&type=topic_merchant_order_wh
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "action": "update",
+    "status": "closed"
+  }
+}
+
+script:pre-request {
+  const crypto = require("crypto");
+  const requestId = crypto.randomUUID();
+  const ts = String(Math.floor(Date.now() / 1000));
+  const id = String(bru.getEnvVar("merchantOrderId") || "").toLowerCase();
+  const v1 = crypto
+    .createHmac("sha256", bru.getEnvVar("webhookSecret"))
+    .update(`id:${id};request-id:${requestId};ts:${ts};`)
+    .digest("hex");
+
+  req.setHeader("x-request-id", requestId);
+  req.setHeader("x-signature", `ts=${ts},v1=${v1}`);
+}
+
+docs {
+  URL publica: {{billingBaseUrl}}/webhooks/mercadopago
+  Preencha webhookSecret (MP_WEBHOOK_SECRET) e merchantOrderId da merchant_order do sandbox.
+}

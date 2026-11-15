@@ -1,0 +1,15 @@
+meta {
+  name: Workshop health
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{workshopBaseUrl}}/health
+  body: none
+  auth: none
+}
+
+docs {
+  Exige `kubectl port-forward -n bunzina svc/bunzina-workshop 3002:80`.
+}

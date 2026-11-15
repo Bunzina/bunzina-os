@@ -1,0 +1,29 @@
+meta {
+  name: Falhar execucao
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{workshopBaseUrl}}/executions/{{serviceOrderId}}/failure
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "reason": "PART_UNAVAILABLE",
+    "detail": "Correia dentada sem estoque no fornecedor"
+  }
+}
+
+docs {
+  Demonstra compensacao da saga depois do pagamento.
+  A OS precisa estar IN_EXECUTION (pagamento confirmado).
+  Publica evt.workshop.execution-failed; o orquestrador aborta e pede estorno (cmd.billing.cancel-quote / refund).
+  Sem "services" no body, todos os itens pendentes entram em failedItems.
+}

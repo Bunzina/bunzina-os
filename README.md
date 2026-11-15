@@ -24,6 +24,7 @@ e a decisão arquitetural está no [RFC da Saga](docs/rfc-saga-orchestration-imp
 O `serviceOrderId` é o `correlationId` de toda a Saga.
 
 Veja os diagramas de [caminho feliz e compensação](docs/saga-orchestration.md).
+A collection Bruno do EKS e o passo a passo dos fluxos estão em [docs/bruno](docs/bruno/FLUXOS.md).
 
 Se a execução falhar depois da confirmação do pagamento, o OS publica
 `cmd.workshop.abort`; após `evt.workshop.execution-aborted`, publica

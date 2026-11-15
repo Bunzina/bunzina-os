@@ -1,0 +1,26 @@
+meta {
+  name: Aprovar orcamento
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{billingBaseUrl}}/quotes/{{quoteId}}/approval
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "document": "{{customerDocument}}",
+    "decision": "APPROVED"
+  }
+}
+
+docs {
+  Aprova e publica evt.billing.quote-approved. O Billing gera o link do Mercado Pago (checkoutUrl).
+}

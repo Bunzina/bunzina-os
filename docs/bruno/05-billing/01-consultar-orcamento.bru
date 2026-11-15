@@ -1,0 +1,19 @@
+meta {
+  name: Consultar orcamento
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{billingBaseUrl}}/quotes/{{quoteId}}
+  body: none
+  auth: none
+}
+
+headers {
+  X-Customer-Document: {{customerDocument}}
+}
+
+docs {
+  quoteId vem do evento evt.billing.quote-issued (depois do diagnostico) ou da tabela quotes.
+}

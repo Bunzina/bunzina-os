@@ -1,0 +1,29 @@
+meta {
+  name: Falhar diagnostico
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{workshopBaseUrl}}/diagnostics/{{serviceOrderId}}/failure
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "reason": "UNREPAIRABLE",
+    "detail": "Motor fundido; OS nao segue para orcamento"
+  }
+}
+
+docs {
+  Demonstra tratamento de falha da saga no diagnostico.
+  Use uma OS nova em IN_DIAGNOSTIC (nao a do fluxo feliz).
+  Publica evt.workshop.diagnostic-failed; a OS deve ir para CANCELED.
+  Reasons: PART_UNAVAILABLE, EXPIRED, REJECTED, TIMEOUT, PROVIDER_ERROR, CUSTOMER_REQUEST, UNREPAIRABLE.
+}
