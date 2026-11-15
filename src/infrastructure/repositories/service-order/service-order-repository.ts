@@ -55,6 +55,26 @@ export class ServiceOrderRepository implements ServiceOrderRepositoryPort {
     return ServiceOrderMapper.toDomain(record, serviceItems, autoPartItems);
   }
 
+  async findByCustomerDocument(document: string): Promise<ServiceOrder[]> {
+    const records = await this.client<ServiceOrderDbSchema[]>`
+      SELECT *
+      FROM bunzina.service_orders
+      WHERE customer_document = ${document}
+        AND status NOT IN ('COMPLETED', 'DELIVERED')
+      ORDER BY created_at ASC
+    `;
+
+    return Promise.all(
+      records.map(async (record) =>
+        ServiceOrderMapper.toDomain(
+          record,
+          await this.findServiceItems(record.id),
+          await this.findAutoPartItems(record.id),
+        ),
+      ),
+    );
+  }
+
   async findByParams(params: FindServiceOrdersParams): Promise<ServiceOrder[]> {
     const offset = (params.page - 1) * params.limit;
     const customerId = params.customerId
@@ -162,6 +182,20 @@ export class ServiceOrderRepository implements ServiceOrderRepositoryPort {
     await this.client`
       DELETE FROM bunzina.service_orders WHERE id = ${id}
     `;
+  }
+
+  async markDelivered(id: string, at: Date): Promise<boolean> {
+    const [updated] = await this.client<{ id: string }[]>`
+      UPDATE bunzina.service_orders
+      SET status = 'DELIVERED',
+          delivered_at = ${at},
+          updated_at = ${at}
+      WHERE id = ${id}
+        AND status = 'COMPLETED'
+      RETURNING id
+    `;
+
+    return updated !== undefined;
   }
 
   async findServiceItemById(id: string): Promise<ServiceItem | null> {

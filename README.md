@@ -6,7 +6,8 @@ PostgreSQL e publica comandos por uma outbox no RabbitMQ.
 
 ## Responsabilidades
 
-- Criar, consultar e listar ordens de serviço.
+- Criar, consultar, listar, editar e excluir ordens de serviço.
+- Registrar a entrega de uma ordem concluída.
 - Persistir o estado da ordem, da Saga e dos eventos processados.
 - Decidir o próximo comando a partir dos eventos de Billing e Workshop.
 - Compensar falhas na ordem inversa: abortar a execução e, depois, estornar o pagamento.
@@ -49,7 +50,7 @@ docker compose run --rm app bun run migration
 docker compose up --build app
 ```
 
-O Compose publica a API em `http://localhost:3000`, o PostgreSQL em `localhost:5432`
+O Compose publica a API em `http://localhost:3001`, o PostgreSQL em `localhost:5432`
 e a interface de gerenciamento do RabbitMQ em `http://localhost:15672`.
 
 ## API e operação
@@ -61,6 +62,14 @@ e a interface de gerenciamento do RabbitMQ em `http://localhost:15672`.
 - `POST /service-orders`: cria a ordem e inicia o diagnóstico.
 - `GET /service-orders/:id`: consulta uma ordem.
 - `GET /service-orders`: lista ordens com paginação e filtros.
+- `GET /service-orders/customer/:documentNumber`: consulta ordens ativas pelo documento salvo no snapshot do cliente.
+- `PUT /service-orders/:id`: atualiza itens e orçamento antes do início da Saga.
+- `DELETE /service-orders/:id`: exclui uma ordem antes do início da Saga.
+- `PATCH /service-orders/:id/status`: registra a entrega (`COMPLETED` para `DELIVERED`).
+
+As rotas de edição e exclusão retornam conflito quando a Saga já foi criada. A API
+não permite alterar manualmente os estados controlados pela Saga. A conclusão dos
+itens de execução pertence ao Workshop.
 
 O intervalo de polling da outbox pode ser definido por `OUTBOX_POLL_INTERVAL_MS`. O
 worker da Saga aceita `SAGA_TIMEOUT_POLL_INTERVAL_MS`. Ambos usam `1000` ms como

@@ -15,9 +15,11 @@ export interface FindServiceOrdersParams {
 export interface ServiceOrderRepository {
   create(serviceOrder: ServiceOrder): Promise<ServiceOrder>;
   findById(id: string): Promise<ServiceOrder | null>;
+  findByCustomerDocument(document: string): Promise<ServiceOrder[]>;
   findByParams(params: FindServiceOrdersParams): Promise<ServiceOrder[]>;
   update(serviceOrder: ServiceOrder): Promise<ServiceOrder>;
   delete(id: string): Promise<void>;
+  markDelivered(id: string, at: Date): Promise<boolean>;
   findServiceItemById(id: string): Promise<ServiceItem | null>;
   updateServiceItem(serviceItem: ServiceItem): Promise<ServiceItem | null>;
   findByServiceItemId(serviceItemId: string): Promise<ServiceOrder | null>;
