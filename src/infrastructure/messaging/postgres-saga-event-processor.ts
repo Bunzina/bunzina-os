@@ -2,6 +2,10 @@ import type { SQL } from 'bun';
 import type { MessageProcessor } from '@/application/ports/message-processor';
 import type { SagaObservability } from '@/application/ports/saga-observability';
 import { SagaInstance } from '@/domain/saga/entities/saga-instance';
+import type { SagaInstanceRepository as SagaInstanceRepositoryPort } from '@/domain/saga/repositories/saga-instance-repository';
+import type { ProcessedEventRepository as ProcessedEventRepositoryPort } from '@/domain/saga/repositories/processed-event-repository';
+import type { OutboxRepository as OutboxRepositoryPort } from '@/domain/messaging/outbox-repository';
+import type { ServiceOrderRepository as ServiceOrderRepositoryPort } from '@/domain/service-order/repositories/service-order-repository';
 import { SagaOrchestrator } from '@/application/saga/saga-orchestrator';
 import { createSagaEventHandlers } from '@/application/saga/saga-event-handlers';
 import { OutboxCommandPublisher } from '@/application/messaging/outbox-command-publisher';
@@ -11,6 +15,23 @@ import { SagaInstanceRepository } from '@/infrastructure/repositories/saga/saga-
 import { ServiceOrderRepository } from '@/infrastructure/repositories/service-order/service-order-repository';
 import { sagaObservability } from '@/infrastructure/observability/metrics';
 import type { Envelope } from './envelope';
+
+type RepositoryFactories = {
+  processedEvents: new (client: SQL) => ProcessedEventRepositoryPort;
+  sagas: new (client: SQL) => SagaInstanceRepositoryPort;
+  serviceOrders: new (
+    client: SQL,
+    useExistingTransaction: boolean,
+  ) => ServiceOrderRepositoryPort;
+  outbox: new (client: SQL) => OutboxRepositoryPort;
+};
+
+const defaultRepositories: RepositoryFactories = {
+  processedEvents: ProcessedEventRepository,
+  sagas: SagaInstanceRepository,
+  serviceOrders: ServiceOrderRepository,
+  outbox: OutboxRepository,
+};
 
 export class BufferedSagaObservability implements SagaObservability {
   private readonly observations: Array<() => void> = [];
@@ -51,6 +72,7 @@ export class PostgresSagaEventProcessor implements MessageProcessor<Envelope> {
   constructor(
     private readonly client: SQL,
     private readonly consumer = 'bunzina-os',
+    private readonly repositories: RepositoryFactories = defaultRepositories,
   ) {}
 
   async process(envelope: Envelope): Promise<boolean> {
@@ -58,7 +80,9 @@ export class PostgresSagaEventProcessor implements MessageProcessor<Envelope> {
     let firstDelivery = false;
 
     await this.client.begin(async (transaction) => {
-      const processedEvents = new ProcessedEventRepository(transaction);
+      const processedEvents = new this.repositories.processedEvents(
+        transaction,
+      );
       firstDelivery = await processedEvents.tryMarkProcessed(
         envelope.eventId,
         this.consumer,
@@ -88,7 +112,7 @@ export class PostgresSagaEventProcessor implements MessageProcessor<Envelope> {
     let handled = false;
 
     await this.client.begin(async (transaction) => {
-      const sagaRepository = new SagaInstanceRepository(transaction);
+      const sagaRepository = new this.repositories.sagas(transaction);
       const saga = await sagaRepository.claimExpired(serviceOrderId, now);
       if (!saga) return;
 
@@ -105,12 +129,12 @@ export class PostgresSagaEventProcessor implements MessageProcessor<Envelope> {
     transaction: SQL,
     observations: SagaObservability,
   ): SagaOrchestrator {
-    const sagaRepository = new SagaInstanceRepository(transaction);
-    const serviceOrderRepository = new ServiceOrderRepository(
+    const sagaRepository = new this.repositories.sagas(transaction);
+    const serviceOrderRepository = new this.repositories.serviceOrders(
       transaction,
       true,
     );
-    const outboxRepository = new OutboxRepository(transaction);
+    const outboxRepository = new this.repositories.outbox(transaction);
     const commandPublisher = new OutboxCommandPublisher(outboxRepository);
 
     return new SagaOrchestrator(

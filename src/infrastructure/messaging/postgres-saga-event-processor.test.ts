@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { SagaInstance } from '@/domain/saga/entities/saga-instance';
 import { SagaStatus } from '@/domain/saga/types/saga-status';
 import { SagaStep } from '@/domain/saga/types/saga-step';
@@ -9,6 +9,10 @@ import {
   serviceOrderId,
 } from '@/test/fixtures/saga-scenario';
 import { buildEnvelope, type Envelope } from './envelope';
+import {
+  BufferedSagaObservability,
+  PostgresSagaEventProcessor,
+} from './postgres-saga-event-processor';
 
 const state: {
   saga: SagaInstance | null;
@@ -44,78 +48,98 @@ const recordTransaction = (transaction: unknown) => {
   state.transactionReferences.push(transaction);
 };
 
-mock.module(
-  '@/infrastructure/repositories/saga/processed-event-repository',
-  () => ({
-    ProcessedEventRepository: class {
-      constructor(transaction: unknown) {
-        recordTransaction(transaction);
-      }
+const repositories = {
+  processedEvents: class {
+    constructor(transaction: unknown) {
+      recordTransaction(transaction);
+    }
 
-      async tryMarkProcessed(eventId: string) {
-        if (state.processedEvents.has(eventId)) return false;
-        state.processedEvents.add(eventId);
-        return true;
-      }
-    },
-  }),
-);
+    async tryMarkProcessed(eventId: string) {
+      if (state.processedEvents.has(eventId)) return false;
+      state.processedEvents.add(eventId);
+      return true;
+    }
+  },
+  sagas: class {
+    constructor(transaction: unknown) {
+      recordTransaction(transaction);
+    }
 
-mock.module(
-  '@/infrastructure/repositories/saga/saga-instance-repository',
-  () => ({
-    SagaInstanceRepository: class {
-      constructor(transaction: unknown) {
-        recordTransaction(transaction);
-      }
+    async findByServiceOrderId() {
+      return state.saga;
+    }
 
-      async findByServiceOrderId() {
-        return state.saga;
-      }
+    async claimExpired(_serviceOrderId: string, now: Date) {
+      const saga = state.saga;
+      if (!saga?.stepDeadlineAt || saga.stepDeadlineAt > now) return null;
 
-      async claimExpired(_serviceOrderId: string, now: Date) {
-        const saga = state.saga;
-        if (!saga?.stepDeadlineAt || saga.stepDeadlineAt > now) return null;
+      saga.status = SagaStatus.COMPENSATING;
+      saga.lastError = 'TIMEOUT';
+      saga.clearStepDeadline();
+      return saga;
+    }
 
-        saga.status = SagaStatus.COMPENSATING;
-        saga.lastError = 'TIMEOUT';
-        saga.clearStepDeadline();
-        return saga;
-      }
+    async update(saga: SagaInstance) {
+      state.saga = saga;
+      return saga;
+    }
 
-      async update(saga: SagaInstance) {
-        state.saga = saga;
-        return saga;
-      }
-    },
-  }),
-);
+    async create(saga: SagaInstance) {
+      return saga;
+    }
 
-mock.module(
-  '@/infrastructure/repositories/service-order/service-order-repository',
-  () => ({
-    ServiceOrderRepository: class {
-      constructor(transaction: unknown, useExistingTransaction: boolean) {
-        recordTransaction(transaction);
-        state.serviceOrderRepositoryUsesExistingTransaction.push(
-          useExistingTransaction,
-        );
-      }
+    async findExpired() {
+      return [];
+    }
+  },
+  serviceOrders: class {
+    constructor(transaction: unknown, useExistingTransaction: boolean) {
+      recordTransaction(transaction);
+      state.serviceOrderRepositoryUsesExistingTransaction.push(
+        useExistingTransaction,
+      );
+    }
 
-      async findById() {
-        return state.order;
-      }
+    async findById() {
+      return state.order;
+    }
 
-      async update(order: ReturnType<typeof makeServiceOrder>) {
-        state.order = order;
-        return order;
-      }
-    },
-  }),
-);
+    async update(order: ReturnType<typeof makeServiceOrder>) {
+      state.order = order;
+      return order;
+    }
 
-mock.module('@/infrastructure/repositories/outbox/outbox-repository', () => ({
-  OutboxRepository: class {
+    async create(order: ReturnType<typeof makeServiceOrder>) {
+      return order;
+    }
+
+    async findByCustomerDocument() {
+      return [];
+    }
+
+    async findByParams() {
+      return [];
+    }
+
+    async delete() {}
+
+    async markDelivered() {
+      return true;
+    }
+
+    async findServiceItemById() {
+      return null;
+    }
+
+    async updateServiceItem() {
+      return null;
+    }
+
+    async findByServiceItemId() {
+      return null;
+    }
+  },
+  outbox: class {
     constructor(transaction: unknown) {
       recordTransaction(transaction);
     }
@@ -123,11 +147,16 @@ mock.module('@/infrastructure/repositories/outbox/outbox-repository', () => ({
     async enqueue(message: { payload: Envelope }) {
       state.commands.push(message.payload);
     }
-  },
-}));
 
-const { PostgresSagaEventProcessor } =
-  await import('./postgres-saga-event-processor');
+    async findPending() {
+      return [];
+    }
+
+    async markPublished() {}
+
+    async markFailed() {}
+  },
+};
 
 const makeDatabase = () => ({
   begin: async (operation: (transaction: unknown) => Promise<void>) => {
@@ -141,6 +170,13 @@ const makeDatabase = () => ({
     }
   },
 });
+
+const makeProcessor = () =>
+  new PostgresSagaEventProcessor(
+    makeDatabase() as never,
+    'bunzina-os',
+    repositories,
+  );
 
 const resetState = (saga?: SagaInstance) => {
   state.saga = saga ?? null;
@@ -157,6 +193,35 @@ const assertSingleTransaction = () => {
 };
 
 describe('PostgresSagaEventProcessor', () => {
+  test('buffers observability records until explicitly flushed', () => {
+    const records: string[] = [];
+    const observability = new BufferedSagaObservability({
+      recordState: () => records.push('state'),
+      recordCompensation: (reason) => records.push(`compensation:${reason}`),
+      recordTimeout: (step) => records.push(`timeout:${step}`),
+      recordOutcome: (_saga, outcome) => records.push(`outcome:${outcome}`),
+    });
+    const saga = new SagaInstance({
+      serviceOrderId,
+      status: SagaStatus.RUNNING,
+      currentStep: SagaStep.DIAGNOSTIC,
+    });
+
+    observability.recordState(saga);
+    observability.recordCompensation('PAYMENT_FAILED');
+    observability.recordTimeout(SagaStep.DIAGNOSTIC);
+    observability.recordOutcome(saga, 'compensated');
+
+    expect(records).toEqual([]);
+    observability.flush();
+    expect(records).toEqual([
+      'state',
+      'compensation:PAYMENT_FAILED',
+      'timeout:DIAGNOSTIC',
+      'outcome:compensated',
+    ]);
+  });
+
   test('processes event state and commands in the same transaction as idempotency', async () => {
     const saga = new SagaInstance({
       serviceOrderId,
@@ -165,7 +230,7 @@ describe('PostgresSagaEventProcessor', () => {
     });
     resetState(saga);
     state.order = makeServiceOrder(ServiceOrderStatus.IN_DIAGNOSTIC);
-    const processor = new PostgresSagaEventProcessor(makeDatabase() as never);
+    const processor = makeProcessor();
     const envelope = buildEnvelope({
       eventType: 'evt.workshop.diagnostic-completed',
       correlationId: serviceOrderId,
@@ -195,7 +260,7 @@ describe('PostgresSagaEventProcessor', () => {
 
   test('rolls back the processed-event claim when orchestration fails', async () => {
     resetState();
-    const processor = new PostgresSagaEventProcessor(makeDatabase() as never);
+    const processor = makeProcessor();
     const envelope = buildEnvelope({
       eventType: 'evt.billing.quote-issued',
       correlationId: serviceOrderId,
@@ -222,7 +287,7 @@ describe('PostgresSagaEventProcessor', () => {
       currentStep: SagaStep.QUOTE,
     });
     resetState(saga);
-    const processor = new PostgresSagaEventProcessor(makeDatabase() as never);
+    const processor = makeProcessor();
     const envelope = buildEnvelope({
       eventType: 'evt.billing.quote-issued',
       correlationId: serviceOrderId,
@@ -251,7 +316,7 @@ describe('PostgresSagaEventProcessor', () => {
       paymentAmountCents: 26000,
     });
     resetState(saga);
-    const processor = new PostgresSagaEventProcessor(makeDatabase() as never);
+    const processor = makeProcessor();
 
     await expect(
       processor.processTimeout(serviceOrderId, new Date()),
