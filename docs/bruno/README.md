@@ -15,9 +15,9 @@ kubectl port-forward -n bunzina svc/bunzina-workshop 3002:80
 
 Passo a passo dos fluxos (feliz e falha): [FLUXOS.md](./FLUXOS.md).
 
-## Demonstração (banca)
+## Fluxos
 
-Use **duas OS**. Não misture o fluxo feliz com o de falha.
+Use duas OS. Não misture o caminho feliz com o de falha.
 
 **Fluxo completo (saga feliz)**  
 `02-catalogo` → `03-os/01-criar-ordem` → `04-workshop/01-concluir-diagnostico` → `05-billing/01-consultar-orcamento` → `05-billing/02-aprovar-orcamento` → pagar o `checkoutUrl` no sandbox MP → `04-workshop/02-concluir-execucao` → `03-os/05-entregar-ordem`.  
@@ -32,4 +32,4 @@ Workshop: `kubectl port-forward -n bunzina svc/bunzina-workshop 3002:80`
 
 Deploy e tracing **não** estão nesta collection: GitHub Actions (`deploy-k8s.yml`) e Grafana (`grafanaUrl`).
 
-O login padrão usa o CUSTOMER criado no smoke test (`52998224725` / `exemplo123`). Cadastro de cliente, veículo, serviço e peça aceita JWT de CUSTOMER ou o header `Api-Key`.
+Login de teste: `52998224725` / `exemplo123`. Cadastro de cliente, veículo, serviço e peça aceita JWT de CUSTOMER ou o header `Api-Key`.

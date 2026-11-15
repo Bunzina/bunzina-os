@@ -1,8 +1,7 @@
 # Arquitetura geral
 
-O `bunzina-os` é o orquestrador. Este diagrama é a visão da solução completa:
-quatro serviços, cada um com banco próprio, e RabbitMQ como único broker.
-Nenhum serviço acessa o banco de outro.
+O `bunzina-os` orquestra a saga. Quatro serviços, cada um com banco próprio,
+RabbitMQ como broker. Nenhum serviço acessa o banco de outro.
 
 ```mermaid
 flowchart LR
@@ -47,8 +46,11 @@ flowchart LR
   WS -.-> GRAF
 ```
 
-O workshop **não tem Ingress/ALB**. Na demonstração:
-`kubectl port-forward -n bunzina svc/bunzina-workshop 3002:80`.
+O workshop não tem Ingress. Acesso local:
+
+```bash
+kubectl port-forward -n bunzina svc/bunzina-workshop 3002:80
+```
 
 ## Comunicação
 
@@ -65,6 +67,6 @@ O workshop **não tem Ingress/ALB**. Na demonstração:
 Só este serviço publica comandos. Participantes só publicam eventos. O
 `serviceOrderId` é o `correlationId` de todas as mensagens.
 
-Justificativa da saga: [README](../README.md#por-que-saga-orquestrada).
+Saga: [README](../README.md#por-que-saga-orquestrada).
 Sequências: [saga-orchestration.md](./saga-orchestration.md).
 Bancos: [database.md](./database.md).

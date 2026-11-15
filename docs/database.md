@@ -1,14 +1,13 @@
 # Bancos de dados
 
-Cada microsserviço **documenta e versiona o próprio schema**, junto das migrations
-(ou índices Mongo). Este repositório só descreve o PostgreSQL do `bunzina-os` e
-aponta para os outros.
+Este repositório descreve o PostgreSQL do `bunzina-os`. Os outros serviços
+documentam o schema junto das próprias migrations.
 
 ## Mapa
 
-| Serviço | Banco | Documento canônico |
+| Serviço | Banco | Onde |
 | --- | --- | --- |
-| `bunzina-os` (este repo) | PostgreSQL | seções abaixo |
+| `bunzina-os` | PostgreSQL | abaixo |
 | `bunzina` | PostgreSQL cadastros | [database.md](https://github.com/Bunzina/bunzina/blob/main/docs/arch/database.md) |
 | `bunzina-billing` | PostgreSQL billing | [er-billing.md](https://github.com/Bunzina/bunzina/blob/main/docs/arch/diagrams/er-billing.md) |
 | `bunzina-workshop` | MongoDB Atlas | [README do workshop](https://github.com/Bunzina/bunzina-workshop/blob/main/README.md#modelo-de-documentos-mongodb) |
@@ -18,12 +17,11 @@ Nenhum serviço acessa o banco de outro. Cliente e veículo entram neste banco c
 
 ### Por que PostgreSQL aqui e Mongo no workshop
 
-OS, itens, `saga_instances` e outbox são relacionais: FK, transação e uma linha de
-saga que dá para mostrar na banca. Cadastros e billing seguem a mesma lógica.
+OS, itens, `saga_instances` e outbox são relacionais: FK, transação e o estado da
+saga numa tabela. Cadastros e billing seguem o mesmo critério.
 
-O workshop é o único dado genuinamente semiestruturado (três listas de itens que
-mudam de forma entre pedido, diagnóstico e execução). Por isso MongoDB Atlas, não
-mais um PostgreSQL.
+No workshop o agregado muda de forma entre pedido, diagnóstico e execução. Por
+isso MongoDB Atlas, não outro PostgreSQL.
 
 ## PostgreSQL deste serviço
 
