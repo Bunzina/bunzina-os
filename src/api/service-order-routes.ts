@@ -1,11 +1,20 @@
 import type { Elysia } from 'elysia';
 import { z } from 'zod';
 import { CreateServiceOrderUseCase } from '@/application/use-cases/service-order/create';
-import { FindServiceOrderByIdUseCase } from '@/application/use-cases/service-order/find-by-id';
+import {
+  FindServiceOrderByIdUseCase,
+  ServiceOrderNotFoundError,
+} from '@/application/use-cases/service-order/find-by-id';
 import { ListServiceOrdersUseCase } from '@/application/use-cases/service-order/list';
+import { FindServiceOrdersByCustomerDocumentUseCase } from '@/application/use-cases/service-order/find-by-customer-document';
+import { UpdateServiceOrderUseCase } from '@/application/use-cases/service-order/update';
+import { DeleteServiceOrderUseCase } from '@/application/use-cases/service-order/delete';
+import { DeliverServiceOrderUseCase } from '@/application/use-cases/service-order/deliver';
+import { ServiceOrderMutationConflictError } from '@/application/use-cases/service-order/mutation-errors';
 import { SagaOrchestrator } from '@/application/saga/saga-orchestrator';
 import { OutboxCommandPublisher } from '@/application/messaging/outbox-command-publisher';
 import { ServiceOrderStatus } from '@/domain/service-order/types/service-order-status';
+import { StatusDirection } from '@/domain/service-order/state-machines/status-machine';
 import { serviceOrderToResponse } from '@/adapters/output/service-order-presenter';
 import { db } from '@/infrastructure/configs/database';
 import { ServiceOrderRepository } from '@/infrastructure/repositories/service-order/service-order-repository';
@@ -54,6 +63,27 @@ const listQuerySchema = z.object({
   endCreatedAt: z.coerce.date().optional(),
 });
 
+const customerDocumentSchema = z
+  .string()
+  .transform((document) => document.replace(/\D/g, ''))
+  .refine((document) => document.length === 11 || document.length === 14);
+
+const updateSchema = z
+  .object({
+    serviceItems: z.array(serviceItemSchema).optional(),
+    autoPartItems: z.array(autoPartItemSchema).optional(),
+  })
+  .refine(
+    (input) =>
+      (input.serviceItems?.length ?? 0) + (input.autoPartItems?.length ?? 0) >
+      0,
+    { message: 'At least one item is required' },
+  );
+
+const updateStatusSchema = z.object({
+  direction: z.enum(StatusDirection),
+});
+
 const jsonError = (
   set: { status?: number | string },
   status: number,
@@ -80,11 +110,64 @@ const dependencies = () => {
     create: new CreateServiceOrderUseCase(repository, catalog),
     findById: new FindServiceOrderByIdUseCase(repository),
     list: new ListServiceOrdersUseCase(repository),
+    findByCustomerDocument: new FindServiceOrdersByCustomerDocumentUseCase(
+      repository,
+    ),
+    update: new UpdateServiceOrderUseCase(repository, sagaRepository, catalog),
+    delete: new DeleteServiceOrderUseCase(repository, sagaRepository),
+    deliver: new DeliverServiceOrderUseCase(repository),
     orchestrator,
   };
 };
 
-export const registerServiceOrderRoutes = (app: Elysia) => {
+type ServiceOrderRouteDependencies = ReturnType<typeof dependencies>;
+
+export const registerServiceOrderRoutes = (
+  app: Elysia,
+  resolveDependencies: () => ServiceOrderRouteDependencies = dependencies,
+) => {
+  app.get(
+    '/service-orders/customer/:documentNumber',
+    async ({ params, set }) => {
+      const parsed = customerDocumentSchema.safeParse(params.documentNumber);
+      if (!parsed.success)
+        return jsonError(set, 400, 'Invalid customer document');
+
+      const orders = await resolveDependencies().findByCustomerDocument.execute(
+        parsed.data,
+      );
+      return Response.json(
+        orders.map((order) => ({
+          status: order.status,
+          serviceItems: order.serviceItems.map((item) => ({
+            description: item.description,
+            price: item.price.value,
+          })),
+          autoPartItems: order.autoPartItems.map((item) => ({
+            description: item.description,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice.value,
+            totalPrice: item.totalPrice?.value,
+          })),
+          createdAt: order.createdAt,
+          updatedAt: order.updatedAt,
+          approvedAt: order.approvedAt,
+          startedAt: order.startedAt,
+          completedAt: order.completedAt,
+          deliveredAt: order.deliveredAt,
+        })),
+      );
+    },
+    {
+      detail: {
+        tags: ['Service Orders'],
+        summary: 'Find active service orders by customer document',
+        description:
+          'Consulta as ordens ativas pelo documento armazenado no snapshot do cliente.',
+      },
+    },
+  );
+
   app.post(
     '/service-orders',
     async ({ body, set }) => {
@@ -93,7 +176,7 @@ export const registerServiceOrderRoutes = (app: Elysia) => {
         return jsonError(set, 400, 'Invalid service order data');
 
       try {
-        const serviceDependencies = dependencies();
+        const serviceDependencies = resolveDependencies();
         const order = await serviceDependencies.create.execute(parsed.data);
         await serviceDependencies.orchestrator.start(order);
         return Response.json(serviceOrderToResponse(order), { status: 201 });
@@ -119,7 +202,7 @@ export const registerServiceOrderRoutes = (app: Elysia) => {
       }
 
       try {
-        const order = await dependencies().findById.execute(params.id);
+        const order = await resolveDependencies().findById.execute(params.id);
         return Response.json(serviceOrderToResponse(order));
       } catch (error) {
         if (error instanceof CatalogServiceError)
@@ -136,6 +219,88 @@ export const registerServiceOrderRoutes = (app: Elysia) => {
     },
   );
 
+  app.put(
+    '/service-orders/:id',
+    async ({ params, body, set }) => {
+      if (!z.uuid().safeParse(params.id).success)
+        return jsonError(set, 400, 'Invalid service order id');
+      const parsed = updateSchema.safeParse(body);
+      if (!parsed.success)
+        return jsonError(set, 400, 'Invalid service order data');
+
+      try {
+        const order = await resolveDependencies().update.execute({
+          id: params.id,
+          ...parsed.data,
+        });
+        return Response.json(serviceOrderToResponse(order));
+      } catch (error) {
+        return handleMutationError(set, error);
+      }
+    },
+    {
+      detail: {
+        tags: ['Service Orders'],
+        summary: 'Update service order items',
+        description:
+          'Atualiza itens e orçamento somente antes de iniciar a saga.',
+      },
+    },
+  );
+
+  app.delete(
+    '/service-orders/:id',
+    async ({ params, set }) => {
+      if (!z.uuid().safeParse(params.id).success)
+        return jsonError(set, 400, 'Invalid service order id');
+
+      try {
+        await resolveDependencies().delete.execute(params.id);
+        set.status = 204;
+        return new Response(null, { status: 204 });
+      } catch (error) {
+        return handleMutationError(set, error);
+      }
+    },
+    {
+      detail: {
+        tags: ['Service Orders'],
+        summary: 'Delete an unprocessed service order',
+        description:
+          'Remove uma ordem apenas se a saga ainda não tiver sido criada.',
+      },
+    },
+  );
+
+  app.patch(
+    '/service-orders/:id/status',
+    async ({ params, body, set }) => {
+      if (!z.uuid().safeParse(params.id).success)
+        return jsonError(set, 400, 'Invalid service order id');
+      const parsed = updateStatusSchema.safeParse(body);
+      if (!parsed.success)
+        return jsonError(set, 400, 'Invalid service order status direction');
+
+      try {
+        const order = await resolveDependencies().deliver.execute(
+          params.id,
+          parsed.data.direction,
+        );
+        return Response.json(serviceOrderToResponse(order));
+      } catch (error) {
+        return handleMutationError(set, error);
+      }
+    },
+    {
+      detail: {
+        tags: ['Service Orders'],
+        summary: 'Mark a completed service order as delivered',
+        description:
+          'A única mudança manual de estado permitida é COMPLETED → DELIVERED.',
+      },
+    },
+  );
+
   app.get(
     '/service-orders',
     async ({ query, set }) => {
@@ -143,7 +308,7 @@ export const registerServiceOrderRoutes = (app: Elysia) => {
       if (!parsed.success)
         return jsonError(set, 400, 'Invalid service order filters');
 
-      const orders = await dependencies().list.execute(parsed.data);
+      const orders = await resolveDependencies().list.execute(parsed.data);
       return Response.json(orders.map(serviceOrderToResponse));
     },
     {
@@ -155,6 +320,19 @@ export const registerServiceOrderRoutes = (app: Elysia) => {
       },
     },
   );
+};
+
+const handleMutationError = (
+  set: { status?: number | string },
+  error: unknown,
+) => {
+  if (error instanceof ServiceOrderNotFoundError)
+    return jsonError(set, 404, error.message);
+  if (error instanceof ServiceOrderMutationConflictError)
+    return jsonError(set, 409, error.message);
+  if (error instanceof CatalogServiceError)
+    return handleCatalogError(set, error);
+  return jsonError(set, 500, 'Failed to process service order');
 };
 
 const handleCatalogError = (
