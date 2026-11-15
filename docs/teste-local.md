@@ -1,5 +1,8 @@
 # Testar a criação de OS com o Workshop
 
+Para o cluster Academy (EKS), use a collection Bruno e o guia em
+[bruno/FLUXOS.md](bruno/FLUXOS.md). Este arquivo cobre só o fluxo local com Docker Compose.
+
 Este fluxo usa os containers locais de Cadastros, `bunzina-os` e Workshop. As portas
 ficam em `3000` (Cadastros), `3001` (OS) e `3002` (Workshop). O RabbitMQ compartilhado
 é o do `bunzina-os`; o MongoDB local pertence ao Workshop. Não precisa do Atlas nem do

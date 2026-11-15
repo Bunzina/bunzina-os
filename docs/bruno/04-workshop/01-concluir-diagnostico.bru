@@ -1,0 +1,43 @@
+meta {
+  name: Concluir diagnostico
+  type: http
+  seq: 1
+}
+
+patch {
+  url: {{workshopBaseUrl}}/diagnostics/{{serviceOrderId}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "diagnosedBy": "mecanico.eks",
+    "notes": "Diagnostico de teste no EKS",
+    "diagnosedItems": {
+      "services": [
+        {
+          "serviceId": "{{serviceId}}",
+          "description": "Troca de oleo",
+          "priceCents": 15000
+        }
+      ],
+      "autoParts": [
+        {
+          "autoPartId": "{{autoPartId}}",
+          "description": "Filtro de oleo",
+          "quantity": 1,
+          "unitPriceCents": 4500
+        }
+      ]
+    }
+  }
+}
+
+docs {
+  Port-forward do workshop. Publica evt.workshop.diagnostic-completed; o Billing emite o orcamento.
+}

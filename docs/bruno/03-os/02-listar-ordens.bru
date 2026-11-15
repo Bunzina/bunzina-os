@@ -1,0 +1,11 @@
+meta {
+  name: Listar ordens
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{osBaseUrl}}/service-orders?page=1&limit=20
+  body: none
+  auth: none
+}

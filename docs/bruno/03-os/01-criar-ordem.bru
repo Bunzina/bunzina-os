@@ -1,0 +1,49 @@
+meta {
+  name: Criar ordem
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{osBaseUrl}}/service-orders
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "customerId": "{{customerId}}",
+    "vehicleId": "{{vehicleId}}",
+    "serviceItems": [
+      {
+        "serviceId": "{{serviceId}}",
+        "price": 15000,
+        "description": "Troca de oleo"
+      }
+    ],
+    "autoPartItems": [
+      {
+        "autoPartId": "{{autoPartId}}",
+        "quantity": 1,
+        "unitPrice": 4500,
+        "description": "Filtro de oleo"
+      }
+    ]
+  }
+}
+
+script:post-response {
+  const id = res.body?.id;
+  if (res.status >= 200 && res.status < 300 && id) {
+    bru.setEnvVar("serviceOrderId", id);
+    bru.setVar("serviceOrderId", id);
+  }
+}
+
+docs {
+  Cria a OS e inicia a saga (comando de diagnostico no RabbitMQ). customerId, vehicleId, serviceId e autoPartId vem do catalogo.
+}

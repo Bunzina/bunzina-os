@@ -1,0 +1,30 @@
+meta {
+  name: Criar admin via Api-Key
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/users
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  Api-Key: {{apiKey}}
+}
+
+body:json {
+  {
+    "name": "Admin EKS",
+    "document": "39053344705",
+    "email": "admin.eks@example.com",
+    "password": "admin123",
+    "role": "ADMIN"
+  }
+}
+
+docs {
+  Preencha `apiKey` com o secret API_KEY do GitHub. Depois altere loginDocument/loginPassword para este admin e rode Login de novo. Catalogo (cliente, peca, servico) costuma exigir ADMIN.
+}

@@ -1,0 +1,37 @@
+meta {
+  name: Criar cliente publico
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/users
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "{{userName}}",
+    "document": "{{userDocument}}",
+    "email": "{{userEmail}}",
+    "password": "{{userPassword}}",
+    "role": "CUSTOMER"
+  }
+}
+
+script:post-response {
+  const id = res.body?.id;
+  if (res.status >= 200 && res.status < 300 && id) {
+    bru.setEnvVar("userId", id);
+    bru.setVar("userId", id);
+  }
+}
+
+docs {
+  Sem autenticacao. Role CUSTOMER apenas. Se o CPF ja existir, use Login.
+}

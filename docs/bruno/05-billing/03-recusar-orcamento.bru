@@ -1,0 +1,28 @@
+meta {
+  name: Recusar orcamento
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{billingBaseUrl}}/quotes/{{quoteId}}/approval
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "document": "{{customerDocument}}",
+    "decision": "REJECTED"
+  }
+}
+
+docs {
+  Falha da saga no orcamento: publica evt.billing.quote-rejected.
+  Use numa OS em AWAITING_APPROVAL, nao na do fluxo feliz.
+  A OS nao avanca para pagamento.
+}
