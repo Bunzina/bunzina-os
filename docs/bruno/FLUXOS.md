@@ -1,7 +1,6 @@
 # Passo a passo — testar os fluxos no EKS
 
-Collection Bruno desta pasta (`docs/bruno`), ambiente **Academy**.  
-No Windows: `\\wsl.localhost\Ubuntu\home\wenisonbp\pos\bunzina-os\docs\bruno`
+Collection Bruno desta pasta (`docs/bruno`), ambiente **Academy**.
 
 Use **duas OS**: uma no fluxo feliz, outra só para falha. Não misture.
 
@@ -35,7 +34,7 @@ kubectl port-forward --address 0.0.0.0 -n bunzina svc/bunzina-workshop 3002:80
 
 ### Bruno
 
-1. **Open Collection** → pasta `bruno-eks`.
+1. **Open Collection** → pasta `docs/bruno`.
 2. Ambiente **Academy** (canto superior direito).
 3. Se cliente/placa/e-mail do ambiente já existirem (409), mude no Academy:
    - `customerDocument` (CPF válido)
@@ -162,21 +161,15 @@ Pré-requisito: fluxo feliz até `IN_EXECUTION` (pagamento confirmado). **Não**
 
 1. `04-workshop` → **Falhar execucao** (`PART_UNAVAILABLE`).
 2. A saga publica `evt.workshop.execution-failed`; o OS pede compensação no billing (cancelar/estornar).
-3. **Buscar ordem** → tende a `CANCELED`.
-
-Esse é o melhor slide de “Saga Pattern e tratamento de falhas”.
+3. **Buscar ordem** → `CANCELED`.
 
 ---
 
-## 3. Fora do Bruno (banca)
+## 3. Deploy e observabilidade
 
-A collection não cobre estes dois itens. Mostre na tela:
+**Deploy:** GitHub Actions, workflow `deploy-k8s.yml` (build, testes, Helm).
 
-**Deploy automatizado + testes**  
-GitHub → repositório do microsserviço (ex.: `bunzina-os`) → Actions → workflow `deploy-k8s.yml` (build, testes, Helm no EKS).
-
-**Monitoramento e rastreamento**  
-Abra o Grafana do ambiente (`grafanaUrl` no Academy). Loki = logs, Tempo = traces, Prometheus = métricas. Uma OS recém-criada deve aparecer correlacionada pelo `serviceOrderId`.
+**Tracing:** Grafana (`grafanaUrl` no Academy). Loki = logs, Tempo = traces, Prometheus = métricas. Correlacionar pelo `serviceOrderId`.
 
 ---
 

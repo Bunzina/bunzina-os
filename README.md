@@ -16,8 +16,33 @@ PostgreSQL e publica comandos por uma outbox no RabbitMQ.
 Billing é dono de orçamentos e pagamentos. Workshop é dono de diagnóstico e execução.
 O `bunzina-os` integra esses serviços pelos contratos de eventos; ele não acessa os
 bancos deles. O contrato compartilhado está em
-[events-saga-contracts.md](https://github.com/Bunzina/bunzina/blob/main/docs/contracts/events-saga-contracts.md)
-e a decisão arquitetural está no [RFC da Saga](docs/rfc-saga-orchestration-implementation.md).
+[events-saga-contracts.md](https://github.com/Bunzina/bunzina/blob/main/docs/contracts/events-saga-contracts.md).
+Swagger: `GET /swagger`.
+
+## Por que saga orquestrada
+
+O ciclo da OS atravessa três serviços e não cabe numa transação. A estratégia é
+**saga orquestrada**, com este serviço no comando
+([ADR 0013](https://github.com/Bunzina/bunzina/blob/main/docs/arch/adrs/0013-orchestrated-saga.md)).
+
+- O estado de cada instância fica em `saga_instances`. A PK é o `service_order_id`,
+  também usado como `correlationId` de todas as mensagens.
+- A tabela guarda os passos já concluídos, não só o passo atual. A compensação
+  depende de até onde a saga chegou.
+- Só o orquestrador publica comandos (`cmd.*`). Billing e Workshop publicam
+  eventos (`evt.*`).
+- Todo passo tem prazo em `step_deadline_at`. Prazo vencido usa a mesma compensação
+  de uma falha explícita (`reason: TIMEOUT`).
+- Recusa de orçamento não é falha: a OS volta para `RECEIVED` e nada é compensado.
+
+Coreografia deixaria o estado do fluxo espalhado nos três serviços. A máquina em
+`src/domain/service-order/state-machines/status-machine.ts` já descrevia o ciclo da
+OS e passou a ser o modelo da saga.
+
+Diagramas de caminho feliz e compensação: [docs/saga-orchestration.md](docs/saga-orchestration.md).
+RFC de implementação: [docs/rfc-saga-orchestration-implementation.md](docs/rfc-saga-orchestration-implementation.md).
+Arquitetura geral (quatro serviços, bancos, broker): [docs/architecture.md](docs/architecture.md).
+Banco deste serviço e mapa dos outros: [docs/database.md](docs/database.md).
 
 ## Fluxos
 
