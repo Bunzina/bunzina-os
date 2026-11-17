@@ -102,6 +102,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate catalog integration settings
+        env:
+          CATALOG_SERVICE_URL: ${{ vars.CATALOG_SERVICE_URL }}
+          CATALOG_SERVICE_API_KEY: ${{ secrets.CATALOG_SERVICE_API_KEY }}
+        run: |
+          if [ -z "$CATALOG_SERVICE_URL" ]; then
+            echo "::error::Configure the CATALOG_SERVICE_URL Actions variable."
+            exit 1
+          fi
+
+          if [ -z "$CATALOG_SERVICE_API_KEY" ]; then
+            echo "::error::Configure the CATALOG_SERVICE_API_KEY Actions secret."
+            exit 1
+          fi
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -163,6 +178,8 @@ jobs:
           DB_USER: ${{ secrets.DB_USER }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           RABBITMQ_URL: ${{ secrets.RABBITMQ_URL }}
+          CATALOG_SERVICE_URL: ${{ vars.CATALOG_SERVICE_URL }}
+          CATALOG_SERVICE_API_KEY: ${{ secrets.CATALOG_SERVICE_API_KEY }}
         run: |
           helm upgrade --install "$HELM_RELEASE" charts/bunzina-os-chart \
             --namespace "$K8S_NAMESPACE" --create-namespace \
@@ -173,6 +190,8 @@ jobs:
             --set app-chart.app.secret.PROD_DB_USER="$DB_USER" \
             --set app-chart.app.secret.PROD_DB_PASSWORD="$DB_PASSWORD" \
             --set app-chart.app.secret.RABBITMQ_URL="$RABBITMQ_URL" \
+            --set-string app-chart.app.config.CATALOG_SERVICE_URL="$CATALOG_SERVICE_URL" \
+            --set-string app-chart.app.secret.CATALOG_SERVICE_API_KEY="$CATALOG_SERVICE_API_KEY" \
             --wait --timeout 10m
 
       - name: Verify rollout
